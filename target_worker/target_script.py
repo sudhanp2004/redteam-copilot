@@ -36,7 +36,7 @@ os.system(f"ngrok config add-authtoken {NGROK_TOKEN}")
 
 print(f"[+] Attaching tunnel endpoint to static address: {NGROK_DOMAIN}")
 # Run the live tunnel foreground block to keep the Kaggle container alive
-os.system(f"ngrok http 11434 --url={NGROK_DOMAIN}")
+os.system(f"ngrok http 11434 --url={NGROK_DOMAIN} --host-header=rewrite")
 
 # 6. Keep container alive indefinitely to maintain the tunnel
 print("[+] Tunnel active. Keeping Kaggle container alive...")
