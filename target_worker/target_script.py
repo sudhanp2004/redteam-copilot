@@ -26,8 +26,9 @@ os.system("ollama pull llama3:8b")
 
 # 3. Download and extract Ngrok binary
 print("[*] Setting up Ngrok network tunnel...")
-os.system("wget https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-amd64.tgz")
-os.system("tar -xvzf ngrok-v3-stable-linux-amd64.tgz -C /usr/local/bin")
+os.system("curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null")
+os.system("echo 'deb https://ngrok-agent.s3.amazonaws.com buster main' | tee /etc/apt/sources.list.d/ngrok.list")
+os.system("apt-get update && apt-get install -y ngrok")
 
 # Configure Ngrok credentials
 os.system(f"ngrok config add-authtoken {NGROK_TOKEN}")
