@@ -45,4 +45,6 @@ jobs:
         KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
       run: |
         cd target_worker
+        echo "Username length: ${#K_USER}"
+        echo "Key length: ${#K_KEY}"
         kaggle kernels push -p .
