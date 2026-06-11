@@ -26,7 +26,7 @@ os.system("ollama pull llama3:8b")
 
 # 3. Download and extract Ngrok binary
 print("[*] Setting up Ngrok network tunnel...")
-os.system("wget https://bin.equinox.io/c/b34xoC86CoG/ngrok-v3-stable-linux-amd64.tgz")
+os.system("wget https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-amd64.tgz")
 os.system("tar -xvzf ngrok-v3-stable-linux-amd64.tgz -C /usr/local/bin")
 
 # Configure Ngrok credentials
