@@ -2,7 +2,8 @@ import os
 import subprocess
 import time
 import requests
-
+import os
+os.system("killall ngrok")
 # Retrieve keys injected via GitHub Secrets environment variables
 NGROK_TOKEN = os.environ.get("NGROK_TOKEN")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
