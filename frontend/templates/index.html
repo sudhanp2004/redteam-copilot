@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red Team Copilot Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Red Team Copilot</h1>
+            <div id="status-badge" class="badge checking">Checking Target...</div>
+        </header>
+
+        <section class="controls">
+            <div class="input-group">
+                <label for="objective">Target Objective</label>
+                <input type="text" id="objective" placeholder="e.g., Analyze vehicle entry vulnerabilities..." autocomplete="off">
+            </div>
+            <div class="button-group">
+                <button id="btn-start" class="btn primary">Start Attack</button>
+                <button id="btn-clear" class="btn secondary">Clear Context</button>
+                <button id="btn-save" class="btn secondary">Save Run</button>
+            </div>
+        </section>
+
+        <section class="metrics-panel">
+            <div class="metric-card">
+                <h3>Trust Vector (Compliance)</h3>
+                <div id="metric-tv" class="metric-value">0.0000</div>
+            </div>
+            <div class="metric-card">
+                <h3>Information Density</h3>
+                <div id="metric-info" class="metric-value">0.0000</div>
+            </div>
+            <div class="metric-card">
+                <h3>Jailbreak Status</h3>
+                <div id="metric-jb" class="metric-value status-false">FALSE</div>
+            </div>
+        </section>
+
+        <section class="terminal-container">
+            <div class="terminal-header">Adversarial Telemetry Console</div>
+            <div id="terminal-output" class="terminal-body">
+                <div class="system-msg">System standing by. Enter objective and click "Start Attack".</div>
+            </div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/stream.js') }}"></script>
+</body>
+</html>

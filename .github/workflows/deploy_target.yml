@@ -1,0 +1,44 @@
+name: Deploy Target Node to Kaggle
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'target_worker/**'
+  workflow_dispatch: # Allows you to manually trigger the deployment from the GitHub Actions tab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Kaggle CLI
+      run: |
+        pip install --upgrade pip
+        pip install kaggle
+
+    - name: Configure Kaggle Authentication
+      run: |
+        mkdir -p ~/.kaggle
+        echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+        chmod 600 ~/.kaggle/kaggle.json
+
+    - name: Inject Network Tunnel Credentials
+      run: |
+        # Securely overwrite the placeholder variable lookups inside the script before uploading
+        sed -i 's|os.environ.get("NGROK_TOKEN")|"${{ secrets.NGROK_TOKEN }}"|g' target_worker/target_script.py
+        sed -i 's|os.environ.get("NGROK_DOMAIN")|"${{ secrets.NGROK_DOMAIN }}"|g' target_worker/target_script.py
+
+    - name: Push Worker Node to Kaggle
+      run: |
+        cd target_worker
+        kaggle kernels push -p .
