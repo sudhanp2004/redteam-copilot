@@ -9,9 +9,8 @@ NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 
 print("[*] Starting Kaggle Target Node initialization...")
 
-# 1. Download and install Ollama headless
-os.system("curl -L https://ollama.com/download/ollama-linux-amd64.tgz -o ollama.tgz")
-os.system("tar -C /usr -xzf ollama.tgz")
+# 1. Download and install Ollama headless using the official script
+os.system("curl -fsSL https://ollama.com/install.sh | sh")
 
 # Start Ollama service daemon in the background
 print("[*] Launching Ollama core service...")
