@@ -31,6 +31,14 @@ jobs:
         sed -i 's|os.environ.get("NGROK_TOKEN")|"${{ secrets.NGROK_TOKEN }}"|g' target_worker/target_script.py
         sed -i 's|os.environ.get("NGROK_DOMAIN")|"${{ secrets.NGROK_DOMAIN }}"|g' target_worker/target_script.py
 
+    - name: Debug Secret Lengths (Safe)
+      env:
+        K_USER: ${{ secrets.KAGGLE_USERNAME }}
+        K_KEY: ${{ secrets.KAGGLE_KEY }}
+      run: |
+        echo "Username length: ${#K_USER}"
+        echo "Key length: ${#K_KEY}"
+
     - name: Push Worker Node to Kaggle
       env:
         KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
