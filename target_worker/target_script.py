@@ -18,7 +18,7 @@ os.system("curl -fsSL https://ollama.com/install.sh | sh")
 
 # Launch Ollama service background daemon
 print("[*] Launching Ollama core service...")
-subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.Popen(["ollama", "serve"])
 time.sleep(5)
 
 # 2. Pull the model weights
