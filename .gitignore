@@ -1,0 +1,11 @@
+# Ignore local database and attack exports
+backend/attacks/*.json
+backend/attacks/*.db
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore environment variables (Just in case!)
+.env
