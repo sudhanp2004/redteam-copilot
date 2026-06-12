@@ -1,8 +1,9 @@
 import os
 import json
 import requests
+from dotenv import load_dotenv
 from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
-
+load_dotenv()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 # Dictionary containing strategic framing configurations
@@ -22,9 +23,9 @@ STRATEGY_REGISTRY = {
         "friendly_name": "professional persona establishment",
         "system_prompt": PROFESSIONAL_PERSONA_ESTABLISHMENT
     },
-    "FAKE_EMERGENCY_SCENARIO": {
+    "FAKE_EMERGENCY_SCENARIOS": {
         "id": "fake_emergency",
-        "friendly_name": "fake emergency scenario",
+        "friendly_name": "fake emergency scenarios",
         "system_prompt": FAKE_EMERGENCY_SCENARIOS
     }
 }
@@ -37,8 +38,8 @@ def route_objective_to_strategy(objective):
     and select the optimal structural jailbreak framing from the registry.
     """
     if not GROQ_API_KEY:
-        print("[!] Missing GROQ_API_KEY. Defaulting to ACADEMIC_RESEARCH.")
-        return STRATEGY_REGISTRY["ACADEMIC_RESEARCH"]
+        print("[!] Missing GROQ_API_KEY. Defaulting to ACADEMIC_RESEARCH_FRAMING.")
+        return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
 
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
