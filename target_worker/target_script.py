@@ -1,47 +1,52 @@
 import os
 import subprocess
 import time
-import requests
-import os
-os.system("killall ngrok")
+
 # Retrieve keys injected via GitHub Secrets environment variables
 NGROK_TOKEN = os.environ.get("NGROK_TOKEN")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 
+# Force Ollama to accept incoming tunnel connections
+os.environ["OLLAMA_HOST"] = "0.0.0.0:11434"
+os.environ["OLLAMA_ORIGINS"] = "*"
+
 print("[*] Starting Kaggle Target Node initialization...")
 
-# 1. Download and install Ollama headless using the official script
+# 1. Install system utilities and Ollama core
 os.system("apt-get update && apt-get install -y zstd")
 os.system("curl -fsSL https://ollama.com/install.sh | sh")
 
-# Start Ollama service daemon in the background
+# Launch Ollama service background daemon
 print("[*] Launching Ollama core service...")
 subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-# Wait for Ollama service daemon to wake up locally
 time.sleep(5)
 
-# 2. Download and pull the target victim model
-print("[*] Fetching model weights (Llama3 8B)...")
-os.system("ollama pull llama3:8b")
+# 2. Pull the model weights
+print("[*] Fetching model weights (Llama3)...")
+os.system("ollama pull llama3")
 
-# 3. Download and extract Ngrok binary
+# 3. Install Ngrok via the stable official package manager
 print("[*] Setting up Ngrok network tunnel...")
 os.system("curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null")
 os.system("echo 'deb https://ngrok-agent.s3.amazonaws.com buster main' | tee /etc/apt/sources.list.d/ngrok.list")
 os.system("apt-get update && apt-get install -y ngrok")
 
-# Configure Ngrok credentials
-os.system(f"ngrok config add-authtoken {NGROK_TOKEN}")
+# 4. Generate native Ngrok v3 YAML config for host rewriting
+print("[*] Generating Ngrok v3 configuration schema...")
+config_content = f"""version: "3"
+agent:
+  authtoken: "{NGROK_TOKEN}"
+tunnels:
+  ollama-edge:
+    proto: http
+    addr: 11434
+    url: "https://{NGROK_DOMAIN}"
+    host_header: "localhost"
+"""
+
+with open("ngrok_config.yml", "w") as f:
+    f.write(config_content)
 
 print(f"[+] Attaching tunnel endpoint to static address: {NGROK_DOMAIN}")
-# Run the live tunnel foreground block to keep the Kaggle container alive
-os.system(f"ngrok http 11434 --url=https://{NGROK_DOMAIN}")
-
-# 6. Keep container alive indefinitely to maintain the tunnel
-print("[+] Tunnel active. Keeping Kaggle container alive...")
-try:
-    while True:
-        time.sleep(60)
-except KeyboardInterrupt:
-    print("[*] Shutting down container.")
+# 5. Boot the tunnel (holds the GitHub Action/Kaggle container alive)
+os.system("ngrok start --all --config ngrok_config.yml")
