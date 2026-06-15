@@ -22,7 +22,9 @@ app = Flask(__name__,
 
 # Fetch configuration endpoints
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
+FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
 TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
 
 # Runtime tracking state matrices
@@ -150,6 +152,10 @@ def attack_stream():
             yield f"data: {json.dumps({'status': 'routing', 'msg': 'Invoking strategy analysis framework...'})}\n\n"
             ACTIVE_STRATEGY = strategies.route_objective_to_strategy(objective)
             database.create_session(CURRENT_SESSION_ID, objective, ACTIVE_STRATEGY["id"], "Ollama-Llama3-8B")
+
+            strat_name = ACTIVE_STRATEGY.get("name", ACTIVE_STRATEGY.get("id", "UNKNOWN STRATEGY"))
+            strat_desc = ACTIVE_STRATEGY.get("description", "Auto-selected by routing heuristic.")
+            yield f"data: {json.dumps({'status': 'strategy_selected', 'strategy': strat_name, 'rationale': strat_desc})}\n\n"
             
         # Reconstruct structural chat payload from persistence records
         history = database.get_session_history(CURRENT_SESSION_ID)
@@ -163,38 +169,165 @@ def attack_stream():
             # The Target's replies are the incoming "user" messages it needs to read
             groq_messages.append({"role": "user", "content": f"[TARGET MODEL REPLIED]:\n{turn['victim_response']}"})
 
-        # --- STEP 1: INVOKE GROQ ADVERSARIAL GENERATION (ATTACKER) ---
+        if len(groq_messages) == 1:
+            groq_messages.append({
+                "role": "user", 
+                "content": "Begin the engagement. Output ONLY your very first conversational opening message to the target based on the pacing rules."
+            })
+
+        # # --- STEP 1: INVOKE GROQ ADVERSARIAL GENERATION (ATTACKER) ---
+        # yield f"data: {json.dumps({'status': 'attacker_start', 'turn': CURRENT_TURN})}\n\n"
+        
+        # attacker_prompt = ""
+        # headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        # attacker_payload = {
+        #     # "model": "llama-3.1-8b-instant",
+        #     "model": "llama-3.3-70b-versatile",
+        #     "messages": groq_messages,
+        #     "temperature": 0.3,
+        #     "stream": True
+        # }
+        
+        # try:
+        #     groq_req = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+        #                              json=attacker_payload, headers=headers, stream=True, timeout=10)
+        #     for line in groq_req.iter_lines():
+        #         if line:
+        #             decoded = line.decode("utf-8").replace("data: ", "").strip()
+        #             if decoded == "[DONE]":
+        #                 break
+        #             try:
+        #                 chunk = json.loads(decoded)
+        #                 token = chunk["choices"][0]["delta"].get("content", "")
+        #                 attacker_prompt += token
+        #                 if token:
+        #                     yield f"data: {json.dumps({'status': 'attacker_token', 'token': token})}\n\n"
+        #             except:
+        #                 pass
+        # except Exception as e:
+        #     yield f"data: {json.dumps({'error': f'Attacker model generation failure: {str(e)}'})}\n\n"
+        #     return
+
+        # # --- STEP 1.2: INVOKE OPENROUTER ADVERSARIAL GENERATION (ATTACKER) ---
+        # yield f"data: {json.dumps({'status': 'attacker_start', 'turn': CURRENT_TURN})}\n\n"
+        
+        # attacker_prompt = ""
+        # headers = {
+        #     "Authorization": f"Bearer {OPENROUTER_API_KEY}", 
+        #     "Content-Type": "application/json",
+        #     "HTTP-Referer": "http://127.0.0.1:5000",
+        #     "X-Title": "RedTeam Copilot"
+        # }
+        
+        # attacker_payload = {
+        #     # "model": "nousresearch/hermes-3-llama-3.1-70b", 
+        #     # "model": "meta-llama/llama-3-8b-instruct:free", 
+        #     "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+        #     "messages": groq_messages,
+        #     "temperature": 0.5,
+        #     "stream": True
+        # }
+        
+        # try:
+        #     or_req = requests.post("https://openrouter.ai/api/v1/chat/completions", 
+        #                              json=attacker_payload, headers=headers, stream=True, timeout=15)
+            
+        #     print("API RESPONSE STATUS:", or_req.status_code)
+        #     print("API RAW RESPONSE:", or_req.text)
+            
+        #     if or_req.status_code != 200:
+        #         error_data = or_req.json()
+        #         err_msg = error_data.get("error", {}).get("message", "Unknown API Error")
+        #         yield f"data: {json.dumps({'error': f'OpenRouter API Error ({or_req.status_code}): {err_msg}'})}\n\n"
+        #         return
+
+        #     for line in or_req.iter_lines():
+        #         if line:
+        #             decoded = line.decode("utf-8").replace("data: ", "").strip()
+        #             if decoded == "[DONE]":
+        #                 break
+                    
+        #             # OpenRouter occasionally sends keep-alive pings starting with :
+        #             if decoded.startswith(":"):
+        #                 continue
+                        
+        #             try:
+        #                 chunk = json.loads(decoded)
+        #                 if "choices" in chunk and len(chunk["choices"]) > 0:
+        #                     delta = chunk["choices"][0].get("delta", {})
+        #                     token = delta.get("content")
+                            
+        #                     # CRITICAL FIX: Ensure token is not None before adding it to the string
+        #                     if token:
+        #                         attacker_prompt += str(token)
+        #                         yield f"data: {json.dumps({'status': 'attacker_token', 'token': str(token)})}\n\n"
+        #             except Exception as parse_err:
+        #                 print(f"Ignoring unparseable chunk: {decoded}")
+        #                 pass
+        # except Exception as e:
+        #     yield f"data: {json.dumps({'error': f'Attacker model generation failure: {str(e)}'})}\n\n"
+        #     return
+
+                # --- STEP 1.3: INVOKE OPENROUTER ADVERSARIAL GENERATION (ATTACKER) ---
         yield f"data: {json.dumps({'status': 'attacker_start', 'turn': CURRENT_TURN})}\n\n"
         
         attacker_prompt = ""
-        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {FEATHERLESS_API_KEY}", 
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://127.0.0.1:5000",
+            "X-Title": "RedTeam Copilot"
+        }
+        
         attacker_payload = {
-            # "model": "llama-3.1-8b-instant",
-            "model": "llama-3.3-70b-versatile",
+            "model": "dphn/dolphin-2.9.1-llama-3-70b",
             "messages": groq_messages,
-            "temperature": 0.6,
+            "temperature": 0.7,
+            "frequency_penalty": 1.1,
+            "max_tokens": 150,
             "stream": True
         }
         
         try:
-            groq_req = requests.post("https://api.groq.com/openai/v1/chat/completions", 
-                                     json=attacker_payload, headers=headers, stream=True, timeout=10)
-            for line in groq_req.iter_lines():
+            or_req = requests.post("https://api.featherless.ai/v1/chat/completions", 
+                                     json=attacker_payload, headers=headers, stream=True, timeout=15)
+            
+            print("API RESPONSE STATUS:", or_req.status_code)
+            print("API RAW RESPONSE:", or_req.text)
+            
+            if or_req.status_code != 200:
+                error_data = or_req.json()
+                err_msg = error_data.get("error", {}).get("message", "Unknown API Error")
+                yield f"data: {json.dumps({'error': f'OpenRouter API Error ({or_req.status_code}): {err_msg}'})}\n\n"
+                return
+
+            for line in or_req.iter_lines():
                 if line:
                     decoded = line.decode("utf-8").replace("data: ", "").strip()
                     if decoded == "[DONE]":
                         break
+                    
+                    # OpenRouter occasionally sends keep-alive pings starting with :
+                    if decoded.startswith(":"):
+                        continue
+                        
                     try:
                         chunk = json.loads(decoded)
-                        token = chunk["choices"][0]["delta"].get("content", "")
-                        attacker_prompt += token
-                        if token:
-                            yield f"data: {json.dumps({'status': 'attacker_token', 'token': token})}\n\n"
-                    except:
+                        if "choices" in chunk and len(chunk["choices"]) > 0:
+                            delta = chunk["choices"][0].get("delta", {})
+                            token = delta.get("content")
+                            
+                            # CRITICAL FIX: Ensure token is not None before adding it to the string
+                            if token:
+                                attacker_prompt += str(token)
+                                yield f"data: {json.dumps({'status': 'attacker_token', 'token': str(token)})}\n\n"
+                    except Exception as parse_err:
+                        print(f"Ignoring unparseable chunk: {decoded}")
                         pass
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Attacker model generation failure: {str(e)}'})}\n\n"
             return
+
 
         # --- STEP 2: FORWARD PAYLOAD TO KAGGLE HOST (TARGET) ---
         yield f"data: {json.dumps({'status': 'target_start'})}\n\n"

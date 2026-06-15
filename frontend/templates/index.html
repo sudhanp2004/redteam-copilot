@@ -3,51 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Red Team Copilot Dashboard</title>
+    <title>RedTeam Copilot</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Red Team Copilot</h1>
-            <div id="status-badge" class="badge checking">Checking Target...</div>
-        </header>
+    <div class="dashboard">
+        <div class="pane chat-pane">
+            <div class="chat-header">
+                <h2>Engagement Arena</h2>
+                <span id="turn-counter">Turn: 0</span>
+            </div>
+            <div id="chat-window" class="chat-window">
+                </div>
+            <button id="scroll-lock-btn" class="hidden">⬇ Resume Auto-Scroll</button>
+        </div>
 
-        <section class="controls">
-            <div class="input-group">
-                <label for="objective">Target Objective</label>
-                <input type="text" id="objective" placeholder="e.g., Analyze vehicle entry vulnerabilities..." autocomplete="off">
+        <div class="pane command-pane">
+            
+            <div class="panel section-status">
+                <div class="status-indicator">
+                    <span class="dot online"></span> Local Backend: Online
+                </div>
+                <div class="status-indicator">
+                    <span id="kaggle-status-dot" class="dot {% if target_connected %}online{% else %}offline{% endif %}"></span> 
+                    <span id="kaggle-status-text">Kaggle Node: {% if target_connected %}Online{% else %}Offline{% endif %}</span>
+                </div>
             </div>
-            <div class="button-group">
-                <button id="btn-start" class="btn primary">Start Attack</button>
-                <button id="btn-clear" class="btn secondary">Clear Context</button>
-                <button id="btn-save" class="btn secondary">Save Run</button>
-            </div>
-        </section>
 
-        <section class="metrics-panel">
-            <div class="metric-card">
-                <h3>Trust Vector (Compliance)</h3>
-                <div id="metric-tv" class="metric-value">0.0000</div>
+            <div class="panel section-mission">
+                <h3>Mission Control</h3>
+                <input type="text" id="objective-input" placeholder="Enter target objective..." />
+                <div class="btn-group">
+                    <button id="start-btn" class="btn primary">Start Automated Attack</button>
+                    <button id="stop-btn" class="btn danger hidden">HALT ATTACK</button>
+                </div>
+                <div class="btn-group secondary-actions">
+                    <button id="clear-btn" class="btn outline">Clear Context</button>
+                    <button id="save-btn" class="btn outline">Save JSON</button>
+                </div>
             </div>
-            <div class="metric-card">
-                <h3>Information Density</h3>
-                <div id="metric-info" class="metric-value">0.0000</div>
-            </div>
-            <div class="metric-card">
-                <h3>Jailbreak Status</h3>
-                <div id="metric-jb" class="metric-value status-false">FALSE</div>
-            </div>
-        </section>
 
-        <section class="terminal-container">
-            <div class="terminal-header">Adversarial Telemetry Console</div>
-            <div id="terminal-output" class="terminal-body">
-                <div class="system-msg">System standing by. Enter objective and click "Start Attack".</div>
+            <div class="panel section-telemetry">
+                <h3>Live Telemetry</h3>
+                
+                <div class="metric-block judge-block safe" id="judge-status-block">
+                    <h4>Judge Verdict</h4>
+                    <span id="judge-status-text">SAFE</span>
+                </div>
+
+                <div class="metric-block strategy-block">
+                    <h4>Active Strategy</h4>
+                    <div id="strategy-name" class="highlight-text">Awaiting Init...</div>
+                    <p id="strategy-rationale" class="small-text">Rationale will appear here once the router selects a path.</p>
+                </div>
+
+                <div class="metric-block gauge-block">
+                    <div class="gauge-header">
+                        <span>Trust Vector</span>
+                        <span id="tv-value">0.00</span>
+                    </div>
+                    <div class="progress-bar"><div id="tv-fill" class="fill" style="width: 0%"></div></div>
+                </div>
+
+                <div class="metric-block gauge-block">
+                    <div class="gauge-header">
+                        <span>Info Density</span>
+                        <span id="info-value">0.00</span>
+                    </div>
+                    <div class="progress-bar"><div id="info-fill" class="fill" style="width: 0%"></div></div>
+                </div>
             </div>
-        </section>
+
+            <div class="panel section-console" id="error-console">
+                <h3>System Logs</h3>
+                <div id="log-window" class="log-window">
+                    <div class="log-entry system">System initialized. Standing by.</div>
+                </div>
+            </div>
+
+        </div>
     </div>
-
     <script src="{{ url_for('static', filename='js/stream.js') }}"></script>
 </body>
 </html>

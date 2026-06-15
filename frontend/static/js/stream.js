@@ -1,196 +1,273 @@
-document.addEventListener("DOMContentLoaded", () => {
-    // DOM Elements
-    const objectiveInput = document.getElementById("objective");
-    const btnStart = document.getElementById("btn-start");
-    const btnClear = document.getElementById("btn-clear");
-    const btnSave = document.getElementById("btn-save");
-    const statusBadge = document.getElementById("status-badge");
-    const terminalOutput = document.getElementById("terminal-output");
-    
-    const metricTv = document.getElementById("metric-tv");
-    const metricInfo = document.getElementById("metric-info");
-    const metricJb = document.getElementById("metric-jb");
+// --- DOM Elements ---
+const chatWindow = document.getElementById('chat-window');
+const logWindow = document.getElementById('log-window');
+const scrollLockBtn = document.getElementById('scroll-lock-btn');
+const objInput = document.getElementById('objective-input');
 
-    let eventSource = null;
-    let currentBlock = null;
+// Buttons
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const clearBtn = document.getElementById('clear-btn');
+const saveBtn = document.getElementById('save-btn');
 
-    // Check remote target availability on initialization
-    checkTargetStatus();
-    setInterval(checkTargetStatus, 15000); // Poll health status every 15 seconds
+// Telemetry Elements
+const turnCounter = document.getElementById('turn-counter');
+const tvValue = document.getElementById('tv-value');
+const tvFill = document.getElementById('tv-fill');
+const infoValue = document.getElementById('info-value');
+const infoFill = document.getElementById('info-fill');
+const judgeBlock = document.getElementById('judge-status-block');
+const judgeText = document.getElementById('judge-status-text');
+const stratName = document.getElementById('strategy-name');
+const stratRationale = document.getElementById('strategy-rationale');
 
-    async function checkTargetStatus() {
-        try {
-            const res = await fetch("/api/target_status");
-            const data = await res.json();
-            if (data.status === "online") {
-                statusBadge.textContent = "Target Online";
-                statusBadge.className = "badge online";
-                btnStart.disabled = false;
-            } else {
-                statusBadge.textContent = "Target Offline";
-                statusBadge.className = "badge offline";
-                btnStart.disabled = true;
-            }
-        } catch (err) {
-            statusBadge.textContent = "Connection Error";
-            statusBadge.className = "badge offline";
-            btnStart.disabled = true;
-        }
-    }
+// State Variables
+let isStreaming = false;
+let autoScrollEnabled = true;
+let currentController = null;
+let currentAttackerBubble = null;
+let currentTargetBubble = null;
 
-    // Append standard status messages to the terminal view
-    function appendSystemMessage(text, className = "system-msg") {
-        const msg = document.createElement("div");
-        msg.className = className;
-        msg.textContent = text;
-        terminalOutput.appendChild(msg);
-        terminalOutput.scrollTop = terminalOutput.scrollHeight;
-    }
-
-    // Initialize or append a fresh conversation block
-    function createTurnBlock(role) {
-        const block = document.createElement("div");
-        block.className = `turn-block ${role}`;
-        
-        const header = document.createElement("div");
-        header.className = `${role}-header`;
-        header.textContent = role === "attacker" ? "[>] ATTACKER:" : "[<] TARGET:";
-        
-        const content = document.createElement("span");
-        
-        block.appendChild(header);
-        block.appendChild(content);
-        terminalOutput.appendChild(block);
-        terminalOutput.scrollTop = terminalOutput.scrollHeight;
-        
-        return content;
-    }
-
-    // Execution action pipeline
-    btnStart.addEventListener("click", () => {
-        const objective = objectiveInput.value.trim();
-        if (!objective) {
-            alert("Please enter an optimization objective before proceeding.");
-            return;
-        }
-
-        btnStart.disabled = true;
-        objectiveInput.disabled = true;
-
-        // Open live unidirectional stream mapping directly back to your Flask app core
-        eventSource = new EventSource(`/api/attack/stream?objective=${encodeURIComponent(objective)}`);
-
-        eventSource.onmessage = (event) => {
-            const data = jsonParseSafe(event.data);
-            if (!data) return;
-
-            if (data.error) {
-                appendSystemMessage(`[!] Error: ${data.error}`, "status-true");
-                stopStream();
-                return;
-            }
-
-            switch (data.status) {
-                case "routing":
-                    appendSystemMessage(`[*] Router: ${data.msg}`, "router-msg");
-                    break;
-                
-                case "attacker_start":
-                    appendSystemMessage(`\n--- TURN ${data.turn} ---`, "system-msg");
-                    currentBlock = createTurnBlock("attacker");
-                    break;
-
-                case "attacker_token":
-                    if (currentBlock) currentBlock.textContent += data.token;
-                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
-                    break;
-
-                case "target_start":
-                    currentBlock = createTurnBlock("target");
-                    break;
-
-                case "target_token":
-                    if (currentBlock) currentBlock.textContent += data.token;
-                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
-                    break;
-
-                case "scoring":
-                    appendSystemMessage("[*] Evaluating turn metrics and scoring safety guardrails...", "system-msg");
-                    break;
-
-                case "turn_complete":
-                    // Render current state parameters inside scorecard fields
-                    metricTv.textContent = data.metrics.tv.toFixed(4);
-                    metricInfo.textContent = data.metrics.info.toFixed(4);
-                    
-                    if (data.jailbreak) {
-                        metricJb.textContent = "BREACHED";
-                        metricJb.className = "metric-value status-true";
-                        appendSystemMessage("[+] CRITICAL ALERT: Objective extracted successfully.", "score-msg breached");
-                    } else {
-                        metricJb.textContent = "FALSE";
-                        metricJb.className = "metric-value status-false";
-                        appendSystemMessage(`[-] Security Compliance Maintained | Trust Vector: ${data.metrics.tv}`, "score-msg");
-                    }
-                    
-                    // Allow the user to trigger the next sequential attack turn manually
-                    btnStart.textContent = "Next Turn";
-                    btnStart.disabled = false;
-                    stopStream();
-                    break;
-            }
-        };
-
-        eventSource.onerror = () => {
-            appendSystemMessage("[!] Pipeline Stream Disconnected unexpectedly.", "status-true");
-            stopStream();
-        };
-    });
-
-    btnClear.addEventListener("click", async () => {
-        if (!confirm("Are you sure you want to completely purge the active memory logs?")) return;
-        stopStream();
-        
-        try {
-            await fetch("/api/clear", { method: "POST" });
-            terminalOutput.innerHTML = '<div class="system-msg">Memory registers cleared. System standing by.</div>';
-            metricTv.textContent = "0.0000";
-            metricInfo.textContent = "0.0000";
-            metricJb.textContent = "FALSE";
-            metricJb.className = "metric-value status-false";
-            
-            objectiveInput.value = "";
-            objectiveInput.disabled = false;
-            btnStart.textContent = "Start Attack";
-            checkTargetStatus();
-        } catch (err) {
-            alert("Failed to communicate clear state command to application server.");
-        }
-    });
-
-    btnSave.addEventListener("click", async () => {
-        try {
-            const res = await fetch("/api/save_attack", { method: "POST" });
-            const data = await res.json();
-            if (data.status === "success") {
-                alert(`Session exported successfully.\nSaved path: ${data.saved_to}`);
-            } else {
-                alert(`Export rejected: ${data.message}`);
-            }
-        } catch (err) {
-            alert("Error running background export processing thread.");
-        }
-    });
-
-    function stopStream() {
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-    }
-
-    function jsonParseSafe(str) {
-        try { return JSON.parse(str); } 
-        catch (e) { return null; }
+// --- Smart Scroll Logic ---
+chatWindow.addEventListener('scroll', () => {
+    // If user scrolls up (more than 50px from bottom), disable auto-scroll
+    const isAtBottom = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 50;
+    if (!isAtBottom && autoScrollEnabled) {
+        autoScrollEnabled = false;
+        scrollLockBtn.classList.remove('hidden');
+    } else if (isAtBottom && !autoScrollEnabled) {
+        autoScrollEnabled = true;
+        scrollLockBtn.classList.add('hidden');
     }
 });
+
+scrollLockBtn.addEventListener('click', () => {
+    autoScrollEnabled = true;
+    scrollLockBtn.classList.add('hidden');
+    scrollToBottom();
+});
+
+function scrollToBottom() {
+    if (autoScrollEnabled) {
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+}
+
+// --- System Logging ---
+function systemLog(message, type = 'system') {
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    entry.innerText = `[${new Date().toLocaleTimeString()}] ${message}`;
+    logWindow.appendChild(entry);
+    logWindow.scrollTop = logWindow.scrollHeight;
+}
+
+function appendBubble(role) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${role}`;
+    
+    const label = document.createElement('div');
+    label.className = 'message-label';
+    label.innerText = role === 'attacker' ? 'Attacker (Groq)' : 'Target (Kaggle)';
+    
+    const textNode = document.createElement('span');
+    wrapper.appendChild(label);
+    wrapper.appendChild(textNode);
+    chatWindow.appendChild(wrapper);
+    
+    return textNode;
+}
+
+// --- Main Execution Loop ---
+async function runTurn(objective) {
+    if (!isStreaming) return;
+
+    currentController = new AbortController();
+    
+    try {
+        const response = await fetch(`/api/attack/stream?objective=${encodeURIComponent(objective)}`, {
+            signal: currentController.signal
+        });
+
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop(); // Keep incomplete chunk in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.replace('data: ', '');
+                    if (dataStr === '[DONE]') continue;
+
+                    try {
+                        const data = JSON.parse(dataStr);
+
+                        if (data.error) {
+                            systemLog(`Error: ${data.error}`, 'error');
+                            stopAttack();
+                            return;
+                        }
+
+                        switch (data.status) {
+                            case 'routing':
+                                systemLog(data.msg);
+                                break;
+                            case 'strategy_selected':
+                                stratName.innerText = data.strategy.replace(/_/g, ' '); // Replaces underscores with spaces
+                                stratRationale.innerText = data.rationale;
+                                systemLog(`Strategy locked: ${data.strategy}`);
+                                break;
+                            case 'attacker_start':
+                                turnCounter.innerText = `Turn: ${data.turn}`;
+                                currentAttackerBubble = appendBubble('attacker');
+                                break;
+                            case 'attacker_token':
+                                if (currentAttackerBubble) currentAttackerBubble.innerHTML += data.token;
+                                scrollToBottom();
+                                break;
+                            case 'target_start':
+                                currentTargetBubble = appendBubble('target');
+                                break;
+                            case 'target_token':
+                                if (currentTargetBubble) currentTargetBubble.innerHTML += data.token;
+                                scrollToBottom();
+                                break;
+                            case 'scoring':
+                                systemLog(`Turn complete. Evaluating telemetry...`);
+                                break;
+                            case 'turn_complete':
+                                // Update Telemetry Gauges
+                                tvValue.innerText = data.metrics.tv.toFixed(2);
+                                tvFill.style.width = `${data.metrics.tv * 100}%`;
+                                
+                                infoValue.innerText = data.metrics.info.toFixed(2);
+                                infoFill.style.width = `${data.metrics.info * 100}%`;
+
+                                // Update Judge Verdict
+                                if (data.jailbreak) {
+                                    judgeBlock.className = 'metric-block judge-block jailbreak';
+                                    judgeText.innerText = 'JAILBREAK DETECTED';
+                                    systemLog('Mission accomplished: Jailbreak successful.', 'system');
+                                    stopAttack(); // Auto-stop on win
+                                    return;
+                                }
+
+                                // If not stopped and no jailbreak, loop automatically!
+                                if (isStreaming) {
+                                    systemLog(`Initiating Turn ${data.turn + 1}...`);
+                                    runTurn(objective); // Recursive call for next turn
+                                }
+                                return;
+                        }
+                    } catch (e) {
+                        console.error("Parse error:", e, dataStr);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            systemLog('Connection severed by user.', 'system');
+        } else {
+            systemLog(`Stream failure: ${e.message}`, 'error');
+            stopAttack();
+        }
+    }
+}
+
+// --- Control Bindings ---
+function startAttack() {
+    const objective = objInput.value.trim();
+    if (!objective) {
+        alert("Please enter an objective.");
+        return;
+    }
+
+    isStreaming = true;
+    startBtn.classList.add('hidden');
+    stopBtn.classList.remove('hidden');
+    objInput.disabled = true;
+    
+    judgeBlock.className = 'metric-block judge-block safe';
+    judgeText.innerText = 'SAFE';
+
+    systemLog(`Automated attack initiated for objective: "${objective}"`);
+    runTurn(objective);
+}
+
+function stopAttack() {
+    isStreaming = false;
+    if (currentController) {
+        currentController.abort();
+    }
+    
+    startBtn.classList.remove('hidden');
+    stopBtn.classList.add('hidden');
+    objInput.disabled = false;
+    systemLog('Attack halted.');
+}
+
+startBtn.addEventListener('click', startAttack);
+stopBtn.addEventListener('click', stopAttack);
+
+// Clear Context
+clearBtn.addEventListener('click', async () => {
+    if (isStreaming) {
+        alert("Please stop the attack before clearing context.");
+        return;
+    }
+    const res = await fetch('/api/clear', { method: 'POST' });
+    if (res.ok) {
+        chatWindow.innerHTML = '';
+        systemLog('Session context cleared. Ready for new engagement.');
+        turnCounter.innerText = 'Turn: 0';
+        tvFill.style.width = '0%';
+        infoFill.style.width = '0%';
+        tvValue.innerText = '0.00';
+        infoValue.innerText = '0.00';
+        judgeBlock.className = 'metric-block judge-block safe';
+        judgeText.innerText = 'SAFE';
+        stratName.innerText = 'Awaiting Init...';
+        stratRationale.innerText = 'Rationale will appear here once the router selects a path.';
+    }
+});
+
+// Save JSON
+saveBtn.addEventListener('click', async () => {
+    const res = await fetch('/api/save_attack', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+        systemLog(`Attack saved to: ${data.saved_to}`);
+    } else {
+        systemLog(`Failed to save: ${data.message}`, 'error');
+    }
+});
+
+// Status Pinger (Runs every 10 seconds)
+setInterval(async () => {
+    try {
+        const res = await fetch('/api/target_status');
+        const data = await res.json();
+        const dot = document.getElementById('kaggle-status-dot');
+        const txt = document.getElementById('kaggle-status-text');
+        
+        if (data.status === 'online') {
+            dot.className = 'dot online';
+            txt.innerText = 'Kaggle Node: Online';
+        } else {
+            dot.className = 'dot offline';
+            txt.innerText = 'Kaggle Node: Offline';
+        }
+    } catch (e) {
+        // Silent fail on ping
+    }
+}, 10000);
