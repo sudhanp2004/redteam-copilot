@@ -32,14 +32,25 @@ STRATEGY_REGISTRY = {
 
 ROUTER_SYSTEM_PROMPT = ROUTER_PROMPT
 
-def route_objective_to_strategy(objective):
+def route_objective_to_strategy(objective, forced_strategy="auto"):
     """
-    Queries Groq (Llama-3.3-70B) to analyze the testing objective
-    and select the optimal structural jailbreak framing from the registry.
+    Selects a strategy either by manual override or by querying the LLM router.
     """
+    # --- 1. Check for manual override bypass ---
+    if forced_strategy != "auto" and forced_strategy in STRATEGY_REGISTRY:
+        print(f"[*] Manual Strategy Override: {forced_strategy}")
+        selected = STRATEGY_REGISTRY[forced_strategy].copy()
+        selected["name"] = selected["friendly_name"]
+        selected["description"] = "Manually selected by operator. LLM routing bypassed."
+        return selected
+
+    # --- 2. Fallback to LLM Router (Auto) ---
     if not GROQ_API_KEY:
         print("[!] Missing GROQ_API_KEY. Defaulting to ACADEMIC_RESEARCH_FRAMING.")
-        return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
+        fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
+        fallback["name"] = fallback["friendly_name"]
+        fallback["description"] = "Default fallback due to missing API key."
+        return fallback
 
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -71,11 +82,20 @@ def route_objective_to_strategy(objective):
             print(f"[*] Strategy Router selected: {selected_key}")
             print(f"[*] Router Reasoning: {reasoning}")
             
-            return STRATEGY_REGISTRY.get(selected_key, STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"])
+            selected = STRATEGY_REGISTRY.get(selected_key, STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]).copy()
+            selected["name"] = selected["friendly_name"]
+            selected["description"] = reasoning
+            return selected
         else:
             print(f"[!] Router API error ({response.status_code}). Falling back to default.")
-            return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
+            fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
+            fallback["name"] = fallback["friendly_name"]
+            fallback["description"] = f"Fallback triggered due to Router HTTP {response.status_code} error."
+            return fallback
             
     except Exception as e:
         print(f"[!] Routing operation failed: {str(e)}. Using fallback framework.")
-        return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
+        fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
+        fallback["name"] = fallback["friendly_name"]
+        fallback["description"] = f"Fallback triggered due to exception: {str(e)}"
+        return fallback

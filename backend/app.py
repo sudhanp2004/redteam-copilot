@@ -21,8 +21,8 @@ app = Flask(__name__,
             static_folder=os.path.join(os.path.dirname(BASE_DIR), "frontend", "static"))
 
 # Fetch configuration endpoints
-# GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
@@ -32,6 +32,7 @@ TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
 CURRENT_SESSION_ID = None
 CURRENT_TURN = 0
 ACTIVE_STRATEGY = None
+ATTACKER_MODEL = "qwen/qwen3-32b"
 
 # ==========================================
 # METRICS & HEURISTIC ENGINE
@@ -140,6 +141,8 @@ def get_target_status():
 def attack_stream():
     """Server-Sent Events (SSE) channel handling token-by-token multi-turn generation."""
     objective = request.args.get("objective", "").strip()
+    forced_strategy = request.args.get("strategy", "auto").strip()
+    
     if not objective:
         return Response("data: {\"error\": \"Objective missing\"}\n\n", mimetype="text/event-stream")
 
@@ -187,10 +190,12 @@ def attack_stream():
         # --- STEP 1: INVOKE GROQ ADVERSARIAL GENERATION (ATTACKER) ---
         yield f"data: {json.dumps({'status': 'attacker_start', 'turn': CURRENT_TURN})}\n\n"
         
+        
+        yield f"data: {json.dumps({'status': 'model_info', 'model_name': ATTACKER_MODEL})}\n\n"
         attacker_prompt = ""
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         attacker_payload = {
-            "model": "qwen/qwen3-32b",
+            "model": ATTACKER_MODEL,
             # "model": "llama-3.3-70b-versatile",
             "messages": groq_messages,
             "temperature": 0.3,
@@ -449,6 +454,7 @@ def save_attack():
     export_payload = {
         "session_id": CURRENT_SESSION_ID,
         "timestamp": timestamp,
+        "attacker_model": ATTACKER_MODEL,
         "strategy_id": ACTIVE_STRATEGY["id"] if ACTIVE_STRATEGY else None,
         "data_history": history
     }

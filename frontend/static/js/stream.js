@@ -3,6 +3,7 @@ const chatWindow = document.getElementById('chat-window');
 const logWindow = document.getElementById('log-window');
 const scrollLockBtn = document.getElementById('scroll-lock-btn');
 const objInput = document.getElementById('objective-input');
+const stratSelect = document.getElementById('strategy-select');
 
 // Buttons
 const startBtn = document.getElementById('start-btn');
@@ -30,7 +31,6 @@ let currentTargetBubble = null;
 
 // --- Smart Scroll Logic ---
 chatWindow.addEventListener('scroll', () => {
-    // If user scrolls up (more than 50px from bottom), disable auto-scroll
     const isAtBottom = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 50;
     if (!isAtBottom && autoScrollEnabled) {
         autoScrollEnabled = false;
@@ -79,13 +79,13 @@ function appendBubble(role) {
 }
 
 // --- Main Execution Loop ---
-async function runTurn(objective) {
+async function runTurn(objective, strategy = "auto") {
     if (!isStreaming) return;
 
     currentController = new AbortController();
     
     try {
-        const response = await fetch(`/api/attack/stream?objective=${encodeURIComponent(objective)}`, {
+        const response = await fetch(`/api/attack/stream?objective=${encodeURIComponent(objective)}&strategy=${encodeURIComponent(strategy)}`, {
             signal: currentController.signal
         });
 
@@ -101,7 +101,7 @@ async function runTurn(objective) {
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n\n');
-            buffer = lines.pop(); // Keep incomplete chunk in buffer
+            buffer = lines.pop(); 
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -122,9 +122,15 @@ async function runTurn(objective) {
                                 systemLog(data.msg);
                                 break;
                             case 'strategy_selected':
-                                stratName.innerText = data.strategy.replace(/_/g, ' '); // Replaces underscores with spaces
+                                stratName.innerText = data.strategy.replace(/_/g, ' '); 
                                 stratRationale.innerText = data.rationale;
                                 systemLog(`Strategy locked: ${data.strategy}`);
+                                break;
+                            case 'model_info':
+                                const modelSpan = document.getElementById('attacker-model-name');
+                                if (modelSpan) {
+                                    modelSpan.textContent = data.model_name;
+                                }
                                 break;
                             case 'attacker_start':
                                 turnCounter.innerText = `Turn: ${data.turn}`;
@@ -145,26 +151,23 @@ async function runTurn(objective) {
                                 systemLog(`Turn complete. Evaluating telemetry...`);
                                 break;
                             case 'turn_complete':
-                                // Update Telemetry Gauges
                                 tvValue.innerText = data.metrics.tv.toFixed(2);
                                 tvFill.style.width = `${data.metrics.tv * 100}%`;
                                 
                                 infoValue.innerText = data.metrics.info.toFixed(2);
                                 infoFill.style.width = `${data.metrics.info * 100}%`;
 
-                                // Update Judge Verdict
                                 if (data.jailbreak) {
                                     judgeBlock.className = 'metric-block judge-block jailbreak';
                                     judgeText.innerText = 'JAILBREAK DETECTED';
                                     systemLog('Mission accomplished: Jailbreak successful.', 'system');
-                                    stopAttack(); // Auto-stop on win
+                                    stopAttack(); 
                                     return;
                                 }
 
-                                // If not stopped and no jailbreak, loop automatically!
                                 if (isStreaming) {
                                     systemLog(`Initiating Turn ${data.turn + 1}...`);
-                                    runTurn(objective); // Recursive call for next turn
+                                    runTurn(objective, strategy);
                                 }
                                 return;
                         }
@@ -187,6 +190,7 @@ async function runTurn(objective) {
 // --- Control Bindings ---
 function startAttack() {
     const objective = objInput.value.trim();
+    const selectedStrategy = stratSelect ? stratSelect.value : "auto";
     if (!objective) {
         alert("Please enter an objective.");
         return;
@@ -201,7 +205,7 @@ function startAttack() {
     judgeText.innerText = 'SAFE';
 
     systemLog(`Automated attack initiated for objective: "${objective}"`);
-    runTurn(objective);
+    runTurn(objective, selectedStrategy);
 }
 
 function stopAttack() {
@@ -238,6 +242,12 @@ clearBtn.addEventListener('click', async () => {
         judgeText.innerText = 'SAFE';
         stratName.innerText = 'Awaiting Init...';
         stratRationale.innerText = 'Rationale will appear here once the router selects a path.';
+        
+        // Reset the model name display
+        const modelSpan = document.getElementById('attacker-model-name');
+        if (modelSpan) {
+            modelSpan.textContent = 'Waiting...';
+        }
     }
 });
 

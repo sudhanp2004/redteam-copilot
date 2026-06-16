@@ -32,7 +32,22 @@
 
             <div class="panel section-mission">
                 <h3>Mission Control</h3>
+
+                <div class="model-display" style="margin-bottom: 10px; font-size: 0.9em; color: #a0aec0;">
+                    Attacker Model: <span id="attacker-model-name" style="font-weight: bold; color: #48bb78;">Waiting...</span>
+                </div>
+
                 <input type="text" id="objective-input" placeholder="Enter target objective..." />
+                <div class="strategy-selector" style="margin-top: 10px; margin-bottom: 15px;">
+                    <label for="strategy-select" style="color: #a0aec0; font-size: 0.9em; margin-right: 10px;">Routing Method:</label>
+                    <select id="strategy-select" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 4px; padding: 5px;">
+                        <option value="auto">Auto (LLM Router)</option>
+                        <option value="ACADEMIC_RESEARCH_FRAMING">Academic Research</option>
+                        <option value="FICTIONAL_CREATIVE_FRAMING">Fictional Creative</option>
+                        <option value="PROFESSIONAL_PERSONA_ESTABLISHMENT">Professional Persona</option>
+                        <option value="FAKE_EMERGENCY_SCENARIOS">Fake Emergency</option>
+                    </select>
+                </div>
                 <div class="btn-group">
                     <button id="start-btn" class="btn primary">Start Automated Attack</button>
                     <button id="stop-btn" class="btn danger hidden">HALT ATTACK</button>
