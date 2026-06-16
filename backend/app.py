@@ -21,7 +21,8 @@ app = Flask(__name__,
             static_folder=os.path.join(os.path.dirname(BASE_DIR), "frontend", "static"))
 
 # Fetch configuration endpoints
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
@@ -198,12 +199,11 @@ def attack_stream():
         
         try:
             groq_req = requests.post("https://api.groq.com/openai/v1/chat/completions", 
-                                     json=attacker_payload, headers=headers, stream=True, timeout=10)
+                                    json=attacker_payload, headers=headers, stream=True, timeout=10)
             
             is_prompt_section = False
-            buffer = ""
-
-
+            full_response = ""  # accumulate entire response first
+            
             for line in groq_req.iter_lines():
                 if line:
                     decoded = line.decode("utf-8").replace("data: ", "").strip()
@@ -211,21 +211,36 @@ def attack_stream():
                         break
                     try:
                         chunk = json.loads(decoded)
+                        if "error" in chunk:
+                            err_msg = chunk["error"].get("message", "Unknown Groq Error")
+                            yield f"data: {json.dumps({'error': f'Groq API Error: {err_msg}'})}\n\n"
+                            return
                         token = chunk["choices"][0]["delta"].get("content", "")
-                        
-                        buffer += token
-                        
-                        # Once we detect "PROMPT:", we start saving/yielding the tokens
-                        if "PROMPT:" in buffer and not is_prompt_section:
-                            is_prompt_section = True
-                            # Extract any text that came immediately after "PROMPT:"
-                            token = buffer.split("PROMPT:")[-1] 
-                            
-                        if is_prompt_section and token:
-                            attacker_prompt += token
-                            yield f"data: {json.dumps({'status': 'attacker_token', 'token': token})}\n\n"
-                    except:
+                        if token:
+                            full_response += token
+                    except Exception:
                         pass
+
+            # Strip <think>...</think> block (handles split-chunk boundary issues)
+            import re
+            cleaned = re.sub(r"<think>.*?</think>", "", full_response, flags=re.DOTALL).strip()
+            print("\n===== RAW QWEN3 RESPONSE =====")
+            print(full_response)
+            print("===== END RAW RESPONSE =====\n")
+            # Extract PROMPT: section
+            if "PROMPT:" in cleaned:
+                attacker_prompt = cleaned.split("PROMPT:", 1)[-1].strip()
+            else:
+                # Fallback: use everything after THOUGHTS: or just the whole thing
+                attacker_prompt = cleaned.split("THOUGHTS:", 1)[-1].strip() if "THOUGHTS:" in cleaned else cleaned.strip()
+
+            # Emit the extracted prompt as tokens to the frontend
+            if attacker_prompt:
+                yield f"data: {json.dumps({'status': 'attacker_token', 'token': attacker_prompt})}\n\n"
+            else:
+                yield f"data: {json.dumps({'error': 'Attacker produced empty prompt after parsing'})}\n\n"
+                return
+
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Attacker model generation failure: {str(e)}'})}\n\n"
             return
@@ -378,7 +393,7 @@ def attack_stream():
                         victim_response += token
                         if token:
                             yield f"data: {json.dumps({'status': 'target_token', 'token': token})}\n\n"
-                    except:
+                    except Exception:
                         pass
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Failed to parse or reach Kaggle Target Node: {str(e)}'})}\n\n"
