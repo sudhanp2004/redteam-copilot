@@ -33,6 +33,18 @@
             <div class="panel section-mission">
                 <h3>Mission Control</h3>
 
+                <div class="control-group" style="margin-bottom: 15px;">
+                    <label for="target-select" style="color: #a0aec0; font-size: 0.9em; display: block; margin-bottom: 5px; font-weight: 500;">
+                        Target LLM Node:
+                    </label>
+                    <select id="target-select" style="width: 100%; background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 4px; padding: 8px; font-size: 0.95em; outline: none;">
+                        <option value="kaggle">Local / Kaggle Tunnel (Llama 3)</option>
+                        
+                        <option value="google:gemini-3.5-flash">Google: Gemini 3.5 Flash</option>
+                        <option value="google:gemini-2.5-flash">Google: Gemini 2.5 Flash</option>
+                    </select>
+                </div>
+
                 <div class="model-display" style="margin-bottom: 10px; font-size: 0.9em; color: #a0aec0;">
                     Attacker Model: <span id="attacker-model-name" style="font-weight: bold; color: #48bb78;">Waiting...</span>
                 </div>

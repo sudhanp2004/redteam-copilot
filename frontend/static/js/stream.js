@@ -4,6 +4,7 @@ const logWindow = document.getElementById('log-window');
 const scrollLockBtn = document.getElementById('scroll-lock-btn');
 const objInput = document.getElementById('objective-input');
 const stratSelect = document.getElementById('strategy-select');
+const targetSelect = document.getElementById('target-select'); // Added Target Selector
 
 // Buttons
 const startBtn = document.getElementById('start-btn');
@@ -66,9 +67,15 @@ function appendBubble(role) {
     const wrapper = document.createElement('div');
     wrapper.className = `message ${role}`;
     
+    // Label updates dynamically if Target changes, but kept simple here
     const label = document.createElement('div');
     label.className = 'message-label';
-    label.innerText = role === 'attacker' ? 'Attacker (Groq)' : 'Target (Kaggle)';
+    if (role === 'attacker') {
+        label.innerText = 'Attacker (Groq)';
+    } else {
+        const targetVal = targetSelect ? targetSelect.value : 'Kaggle';
+        label.innerText = `Target (${targetVal.split(':')[0]})`; // Shows 'Target (kaggle)' or 'Target (google)'
+    }
     
     const textNode = document.createElement('span');
     wrapper.appendChild(label);
@@ -79,13 +86,14 @@ function appendBubble(role) {
 }
 
 // --- Main Execution Loop ---
-async function runTurn(objective, strategy = "auto") {
+async function runTurn(objective, strategy = "auto", target = "kaggle") { // Added Target parameter
     if (!isStreaming) return;
 
     currentController = new AbortController();
     
     try {
-        const response = await fetch(`/api/attack/stream?objective=${encodeURIComponent(objective)}&strategy=${encodeURIComponent(strategy)}`, {
+        // Appended the target query parameter to the API URL
+        const response = await fetch(`/api/attack/stream?objective=${encodeURIComponent(objective)}&strategy=${encodeURIComponent(strategy)}&target=${encodeURIComponent(target)}`, {
             signal: currentController.signal
         });
 
@@ -167,7 +175,7 @@ async function runTurn(objective, strategy = "auto") {
 
                                 if (isStreaming) {
                                     systemLog(`Initiating Turn ${data.turn + 1}...`);
-                                    runTurn(objective, strategy);
+                                    runTurn(objective, strategy, target); // Recursively pass target
                                 }
                                 return;
                         }
@@ -191,6 +199,8 @@ async function runTurn(objective, strategy = "auto") {
 function startAttack() {
     const objective = objInput.value.trim();
     const selectedStrategy = stratSelect ? stratSelect.value : "auto";
+    const selectedTarget = targetSelect ? targetSelect.value : "kaggle"; // Fetch Target Value
+    
     if (!objective) {
         alert("Please enter an objective.");
         return;
@@ -205,7 +215,9 @@ function startAttack() {
     judgeText.innerText = 'SAFE';
 
     systemLog(`Automated attack initiated for objective: "${objective}"`);
-    runTurn(objective, selectedStrategy);
+    systemLog(`Target selected: ${selectedTarget}`); // Log the active target
+    
+    runTurn(objective, selectedStrategy, selectedTarget); // Pass target to loop
 }
 
 function stopAttack() {
