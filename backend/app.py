@@ -32,7 +32,9 @@ TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
 CURRENT_SESSION_ID = None
 CURRENT_TURN = 0
 ACTIVE_STRATEGY = None
-ATTACKER_MODEL = "qwen/qwen3-32b"
+# ATTACKER_MODEL = "qwen/qwen3-32b"
+ATTACKER_MODEL = "qwen/qwen3.6-27b"
+
 
 # ==========================================
 # METRICS & HEURISTIC ENGINE
@@ -175,11 +177,16 @@ def attack_stream():
         )
         groq_messages = [{"role": "system", "content": formatted_prompt + anti_monologue_rule}]
         
-        for turn in history:
+        total_turns = len(history)
+        for i, turn in enumerate(history):
             # The Attacker's own past outputs are its "assistant" thoughts
             groq_messages.append({"role": "assistant", "content": turn["attacker_prompt"]})
             # The Target's replies are the incoming "user" messages it needs to read
-            groq_messages.append({"role": "user", "content": f"[TARGET MODEL REPLIED]:\n{turn['victim_response']}"})
+            if i >= total_turns - 2:
+                groq_messages.append({"role": "user", "content": f"[TARGET MODEL REPLIED]:\n{turn['victim_response']}"})
+            else:
+                # Replace older target responses with a 4-token placeholder
+                groq_messages.append({"role": "user", "content": "[TARGET RESPONSE OMITTED FOR BREVITY]"})
 
         if len(groq_messages) == 1:
             groq_messages.append({
