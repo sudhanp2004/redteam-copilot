@@ -10,7 +10,7 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initialize schema definitions if the database file does not exist."""
+    """Initialize schema definitions and run migrations if columns are missing."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -27,7 +27,7 @@ def init_db():
         )
     """)
 
-    # Table 2: Step Telemetry Log Matrix
+    # Table 2: Step Telemetry Log Matrix (Updated Schema)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS conversation_logs (
             log_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,10 +37,31 @@ def init_db():
             victim_response TEXT NOT NULL,
             trust_vector REAL,
             info_density REAL,
+            semantic_compliance REAL,
+            hedge_density REAL,
+            readability REAL,
             jailbreak_score BOOLEAN,
+            current_phase TEXT,
             FOREIGN KEY (session_id) REFERENCES attack_sessions(session_id) ON DELETE CASCADE
         )
     """)
+
+    # Dynamic Schema Migration: Add new NLP metric columns to existing databases seamlessly
+    try:
+        cursor.execute("ALTER TABLE conversation_logs ADD COLUMN semantic_compliance REAL")
+        cursor.execute("ALTER TABLE conversation_logs ADD COLUMN hedge_density REAL")
+        cursor.execute("ALTER TABLE conversation_logs ADD COLUMN readability REAL")
+        cursor.execute("ALTER TABLE conversation_logs ADD COLUMN current_phase TEXT")
+    except sqlite3.OperationalError:
+        # Columns already exist, migration skips silently
+        pass
+
+    # Migration: Add jailbreak_reason column for storing judge rationale text
+    try:
+        cursor.execute("ALTER TABLE conversation_logs ADD COLUMN jailbreak_reason TEXT")
+    except sqlite3.OperationalError:
+        # Column already exists, migration skips silently
+        pass
 
     conn.commit()
     conn.close()
@@ -55,13 +76,31 @@ def create_session(session_id, objective, strategy_used, victim_model):
     conn.commit()
     conn.close()
 
-def log_turn(session_id, turn_number, attacker_prompt, victim_response, tv, info, jailbreak):
+def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics, jailbreak, phase="UNKNOWN", reason=""):
+    """
+    Accepts the entire metrics dictionary and writes all NLP scores to the database.
+    Also stores the judge's rationale text (reason) for the jailbreak verdict.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO conversation_logs (session_id, turn_number, attacker_prompt, victim_response, trust_vector, info_density, jailbreak_score)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (session_id, turn_number, attacker_prompt, victim_response, tv, info, jailbreak))
+        INSERT INTO conversation_logs 
+        (session_id, turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, current_phase, jailbreak_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        session_id, 
+        turn_number, 
+        attacker_prompt, 
+        victim_response, 
+        metrics.get("tv", 0.0), 
+        metrics.get("info", 0.0), 
+        metrics.get("emb", 0.0), 
+        metrics.get("hedge", 0.0), 
+        metrics.get("read", 0.0), 
+        jailbreak,
+        phase,
+        reason
+    ))
     conn.commit()
     conn.close()
 
@@ -69,7 +108,7 @@ def get_session_history(session_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT turn_number, attacker_prompt, victim_response, trust_vector, info_density, jailbreak_score
+        SELECT turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, current_phase, jailbreak_reason
         FROM conversation_logs
         WHERE session_id = ?
         ORDER BY turn_number ASC

@@ -22,6 +22,7 @@ const judgeBlock = document.getElementById('judge-status-block');
 const judgeText = document.getElementById('judge-status-text');
 const stratName = document.getElementById('strategy-name');
 const stratRationale = document.getElementById('strategy-rationale');
+const currentPhase = document.getElementById('current-phase');
 
 // State Variables
 let isStreaming = false;
@@ -140,6 +141,28 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
                                     modelSpan.textContent = data.model_name;
                                 }
                                 break;
+
+                                case 'phase_update':
+                                if (data.phase) {
+                                    currentPhase.innerText = data.phase.replace(/_/g, ' ');
+                                    
+                                    if (data.phase === 'CONTEXT_PRIMING') {
+                                        currentPhase.style.color = '#ecc94b'; 
+                                        currentPhase.style.border = '1px solid #ecc94b';
+                                    } else if (data.phase === 'ADVERSARIAL_DRIFT') {
+                                        currentPhase.style.color = '#ed8936'; 
+                                        currentPhase.style.border = '1px solid #ed8936';
+                                    } else if (data.phase === 'COMPROMISE') {
+                                        currentPhase.style.color = '#f56565'; 
+                                        currentPhase.style.border = '1px solid #f56565';
+                                    } else {
+                                        currentPhase.style.color = '#a0aec0'; 
+                                        currentPhase.style.border = 'none';
+                                    }
+                                }
+                                break;
+
+
                             case 'attacker_start':
                                 turnCounter.innerText = `Turn: ${data.turn}`;
                                 currentAttackerBubble = appendBubble('attacker');
@@ -165,12 +188,41 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
                                 infoValue.innerText = data.metrics.info.toFixed(2);
                                 infoFill.style.width = `${data.metrics.info * 100}%`;
 
+                                if (data.phase) {
+                                    currentPhase.innerText = data.phase.replace(/_/g, ' ');
+                                    
+                                    // Color code the phases for visual escalation
+                                    if (data.phase === 'CONTEXT_PRIMING') {
+                                        currentPhase.style.color = '#ecc94b'; // Yellow
+                                        currentPhase.style.border = '1px solid #ecc94b';
+                                    } else if (data.phase === 'ADVERSARIAL_DRIFT') {
+                                        currentPhase.style.color = '#ed8936'; // Orange
+                                        currentPhase.style.border = '1px solid #ed8936';
+                                    } else if (data.phase === 'COMPROMISE') {
+                                        currentPhase.style.color = '#f56565'; // Red
+                                        currentPhase.style.border = '1px solid #f56565';
+                                    } else {
+                                        currentPhase.style.color = '#a0aec0'; // Default gray
+                                        currentPhase.style.border = 'none';
+                                    }
+                                }
+
+                                // --- Judge rationale: log it every turn, and attach as a tooltip ---
+                                if (data.jailbreak_reason) {
+                                    systemLog(`Judge: ${data.jailbreak_reason}`);
+                                }
+
                                 if (data.jailbreak) {
                                     judgeBlock.className = 'metric-block judge-block jailbreak';
                                     judgeText.innerText = 'JAILBREAK DETECTED';
+                                    judgeText.title = data.jailbreak_reason || '';
                                     systemLog('Mission accomplished: Jailbreak successful.', 'system');
                                     stopAttack(); 
                                     return;
+                                } else {
+                                    judgeBlock.className = 'metric-block judge-block safe';
+                                    judgeText.innerText = 'SAFE';
+                                    judgeText.title = data.jailbreak_reason || '';
                                 }
 
                                 if (isStreaming) {
@@ -252,9 +304,14 @@ clearBtn.addEventListener('click', async () => {
         infoValue.innerText = '0.00';
         judgeBlock.className = 'metric-block judge-block safe';
         judgeText.innerText = 'SAFE';
+        judgeText.title = '';
         stratName.innerText = 'Awaiting Init...';
         stratRationale.innerText = 'Rationale will appear here once the router selects a path.';
         
+        currentPhase.innerText = 'Awaiting Init...';
+        currentPhase.style.color = '#a0aec0';
+        currentPhase.style.border = 'none';
+
         // Reset the model name display
         const modelSpan = document.getElementById('attacker-model-name');
         if (modelSpan) {
