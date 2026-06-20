@@ -1,0 +1,10 @@
+1. GPT-4o / GPT-4.1 (OpenAI)
+Most recognizable name in the field, period. Any examiner will know it. OpenAI API, well-documented, easy to wire into your existing requests.post pattern (same shape as your Groq/Gemini calls).
+2. Claude Sonnet 4.6 or Claude Haiku 4.5 (Anthropic)
+Strong recognition, and including it makes for a nice three-way comparison (OpenAI vs Anthropic vs Google) which is a natural axis for a research write-up. Use Haiku if budget matters — it's the cheap/fast tier.
+3. Llama (Meta) — via Groq or OpenRouter, which you already have keys for
+You already have a Groq key wired in (ATTACKER_MODEL = "qwen/qwen3.6-27b" uses it) — Llama models are also served on Groq, so this is close to zero extra integration work. Meta + "open-weights" angle is also a nice contrast point: open vs proprietary safety tuning is a publishable axis on its own.
+4. Mistral (Mistral AI) — via OpenRouter (you have that key too)
+Less famous than the above three but well-known in research circles, European AI angle, and genuinely different safety-tuning philosophy — good for showing your judge generalizes across providers, not just US big tech.
+5. DeepSeek (DeepSeek) — via OpenRouter
+Very high name recognition right now given how much press DeepSeek got, and known in safety research specifically for being more permissive on some categories — likely to give you genuinely different (probably higher) jailbreak rates, which makes for a more interesting results table than five models that all behave the same.

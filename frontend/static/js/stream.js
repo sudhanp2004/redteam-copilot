@@ -211,6 +211,9 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
                                 if (data.jailbreak_reason) {
                                     systemLog(`Judge: ${data.jailbreak_reason}`);
                                 }
+                                if (data.bucket) {
+                                    systemLog(`Routed to bucket: ${data.bucket}`);
+                                }
 
                                 if (data.jailbreak) {
                                     judgeBlock.className = 'metric-block judge-block jailbreak';

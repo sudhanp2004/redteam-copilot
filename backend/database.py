@@ -52,6 +52,7 @@ def init_db():
         cursor.execute("ALTER TABLE conversation_logs ADD COLUMN hedge_density REAL")
         cursor.execute("ALTER TABLE conversation_logs ADD COLUMN readability REAL")
         cursor.execute("ALTER TABLE conversation_logs ADD COLUMN current_phase TEXT")
+        cursor.execute("ALTER TABLE conversation_logs ADD COLUMN harm_bucket TEXT")
     except sqlite3.OperationalError:
         # Columns already exist, migration skips silently
         pass
@@ -76,7 +77,7 @@ def create_session(session_id, objective, strategy_used, victim_model):
     conn.commit()
     conn.close()
 
-def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics, jailbreak, phase="UNKNOWN", reason=""):
+def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics, jailbreak, phase="UNKNOWN", reason="", bucket="UNKOWN"):
     """
     Accepts the entire metrics dictionary and writes all NLP scores to the database.
     Also stores the judge's rationale text (reason) for the jailbreak verdict.
@@ -85,8 +86,8 @@ def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics,
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO conversation_logs 
-        (session_id, turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, current_phase, jailbreak_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, current_phase, jailbreak_reason, harm_bucket)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         session_id, 
         turn_number, 
@@ -99,7 +100,8 @@ def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics,
         metrics.get("read", 0.0), 
         jailbreak,
         phase,
-        reason
+        reason,
+        bucket
     ))
     conn.commit()
     conn.close()
