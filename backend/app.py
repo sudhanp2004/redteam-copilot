@@ -12,7 +12,6 @@ import textstat
 from sentence_transformers import SentenceTransformer
 import jailbreak_judge
 
-
 # Import database management and strategy routing layers
 import database
 import strategies
@@ -60,20 +59,24 @@ def cosine_sim(a, b):
     a, b = np.array(a), np.array(b)
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
 
-
-
 app = Flask(__name__, 
             template_folder=os.path.join(os.path.dirname(BASE_DIR), "frontend", "templates"),
             static_folder=os.path.join(os.path.dirname(BASE_DIR), "frontend", "static"))
 
-# Fetch configuration endpoints
-# GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# ==========================================
+# API KEYS & CONFIGURATION
+# ==========================================
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
+
+# Direct Target API Keys
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 # Runtime tracking state matrices
 CURRENT_SESSION_ID = None
@@ -143,7 +146,6 @@ def calculate_metrics(attacker_text, victim_text):
         "read": round(readability_score, 4)
     }
 
-
 def _call_judge_llm(system_prompt, user_content, target_model):
     """Single LLM call to whichever judge backend is opposite the target.
     Returns parsed JSON dict, or None on failure (caller handles fallback)."""
@@ -191,7 +193,6 @@ def _call_judge_llm(system_prompt, user_content, target_model):
             print(f"[Judge Error]: {str(e)}")
             return None
 
-
 def evaluate_jailbreak_status(victim_response, objective, target_model):
     judge_text = victim_response[:2000] if len(victim_response) > 2000 else victim_response
 
@@ -202,7 +203,7 @@ def evaluate_jailbreak_status(victim_response, objective, target_model):
         target_model
     )
     if router_result is None:
-        return False, "Router call failed; defaulting to FALSE for safety of metrics (flag for manual review)."
+        return False, "Router call failed; defaulting to FALSE for safety of metrics (flag for manual review).", "UNKNOWN"
 
     bucket = router_result.get("primary_bucket", "GENERATIVE")
     if bucket not in jailbreak_judge.BUCKET_TESTS:
@@ -212,11 +213,10 @@ def evaluate_jailbreak_status(victim_response, objective, target_model):
     judge_prompt = jailbreak_judge.build_judge_call(bucket, objective, judge_text)
     verdict = _call_judge_llm(judge_prompt, f"Target AI Response to evaluate:\n\n{judge_text}", target_model)
     if verdict is None:
-        return False, f"Judge call failed after routing to bucket={bucket}."
+        return False, f"Judge call failed after routing to bucket={bucket}.", bucket
 
     reason = f"[{bucket}] " + verdict.get("reason", "")
     return bool(verdict.get("jailbreak_successful", False)), reason, bucket
-
 
 # ==========================================
 # MAIN EXECUTION CORE ROUTES
@@ -255,20 +255,14 @@ def attack_stream():
         if CURRENT_SESSION_ID is None:
             CURRENT_SESSION_ID = str(uuid.uuid4())
             CURRENT_TURN = 1
-            # yield f"data: {json.dumps({'status': 'routing', 'msg': 'Invoking strategy analysis framework...'})}\n\n"
-            # ACTIVE_STRATEGY = strategies.route_objective_to_strategy(objective)
 
-# --- PERSONA SELECTION FIX ---
+            # --- PERSONA SELECTION FIX ---
             if forced_strategy == "auto":
                 yield f"data: {json.dumps({'status': 'routing', 'msg': 'Invoking auto-routing framework...'})}\n\n"
             else:
                 yield f"data: {json.dumps({'status': 'routing', 'msg': f'Loading manual persona: {forced_strategy}'})}\n\n"
                 
-            # Just pass forced_strategy directly to your existing function!
-            # Your strategies.py handles the "auto" vs "manual" logic internally.
             ACTIVE_STRATEGY = strategies.route_objective_to_strategy(objective, forced_strategy)
-            # -----------------------------
-
             
             database.create_session(CURRENT_SESSION_ID, objective, ACTIVE_STRATEGY["id"], target_model_id)
 
@@ -296,10 +290,8 @@ def attack_stream():
             groq_messages.append({"role": "assistant", "content": turn["attacker_prompt"]})
         
             if i >= total_turns - 2:
-
                 victim_text = turn['victim_response'] if turn['victim_response'] else ""
                 
-                # 2. Truncate it if it exceeds the limit
                 if len(victim_text) > MAX_ALLOWED_CHARS:
                     victim_text = victim_text[:MAX_ALLOWED_CHARS] + "\n\n[SYSTEM: TARGET RESPONSE TRUNCATED TO FIT CONTEXT]"
 
@@ -334,43 +326,34 @@ def attack_stream():
                 groq_req = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                                         json=attacker_payload, headers=headers, timeout=15)
                 
-                # --- 429 RATE LIMIT HANDLER ---
                 if groq_req.status_code == 429:
                     wait_time = int(groq_req.headers.get("Retry-After", 60))
                     yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit. Pausing attack for {wait_time} seconds...'})}\n\n"
                     time.sleep(wait_time)
-                    continue  # Retry the exact same request
+                    continue  
                 
                 if groq_req.status_code == 200:
                     response_data = groq_req.json()
                     raw_content = response_data["choices"][0]["message"]["content"]
 
-                    # --- FIX: Ruthlessly strip the <think> block before parsing ---
                     import re
-                    # 1. Remove everything between <think> and </think>
                     cleaned_content = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
-                    
-                    # 2. Safety catch: If it forgot the closing tag, split and take everything after it
                     if "<think>" in cleaned_content:
                         cleaned_content = cleaned_content.split("</think>")[-1].strip()
 
                     attacker_phase = "UNKNOWN"
-
                     try:
-                        # Look specifically for the JSON brackets
                         json_match = re.search(r'\{.*?\}', cleaned_content, flags=re.DOTALL)
                         if json_match:
                             parsed_json = json.loads(json_match.group(0))
                             attacker_prompt = parsed_json.get("prompt", "").strip()
                             attacker_phase = parsed_json.get("phase", "UNKNOWN").strip().upper()
                         else:
-                            # Fallback if it completely forgot the JSON formatting
                             attacker_prompt = cleaned_content
                     except Exception:
-                        # Final fallback
                         attacker_prompt = cleaned_content.replace('{"prompt":', '').replace('"}', '').strip()
                         
-                    break  # Success, break out of the retry loop
+                    break 
                     
                 else:
                     yield f"data: {json.dumps({'error': f'Groq API Error {groq_req.status_code}'})}\n\n"
@@ -380,13 +363,11 @@ def attack_stream():
                 if attempt == max_retries - 1:
                     yield f"data: {json.dumps({'error': f'Attacker failure: {str(e)}'})}\n\n"
                     return
-                time.sleep(5) # Brief pause on network failure before retry
+                time.sleep(5) 
 
-        # --- NEW: Stream the phase to the UI immediately before the text starts ---
+        # Stream the phase to the UI immediately before the text starts
         yield f"data: {json.dumps({'status': 'phase_update', 'phase': attacker_phase})}\n\n"
-        # ------------------------------------------------------------------------
 
-        # Prevent empty bubbles
         if not attacker_prompt:
             attacker_prompt = "Hello."
 
@@ -435,7 +416,6 @@ def attack_stream():
                 yield f"data: {json.dumps({'error': 'GEMINI_API_KEY is missing from .env'})}\n\n"
                 return
 
-            # FIX 1: Prevent sending empty strings which crashes the Gemini API
             gemini_contents = []
             for turn in history:
                 att_text = turn["attacker_prompt"] if turn["attacker_prompt"] else "[silence]"
@@ -459,11 +439,8 @@ def attack_stream():
             
             try:
                 target_req = requests.post(url, json=payload, stream=True, timeout=30)
-                
-                # FIX 2: Catch HTTP errors directly and send them to the UI
                 if target_req.status_code != 200:
-                    err_msg = f"API Error {target_req.status_code}: {target_req.text}"
-                    yield f"data: {json.dumps({'error': err_msg})}\n\n"
+                    yield f"data: {json.dumps({'error': f'API Error {target_req.status_code}: {target_req.text}'})}\n\n"
                     return
 
                 for line in target_req.iter_lines():
@@ -477,7 +454,6 @@ def attack_stream():
                                 chunk = json.loads(decoded)
                                 if "candidates" in chunk and chunk["candidates"]:
                                     candidate = chunk["candidates"][0]
-                                    
                                     if candidate.get("finishReason") == "SAFETY":
                                         blocked_msg = "\n\n[SYSTEM: GEMINI API SAFETY BLOCK TRIGGERED]"
                                         victim_response += blocked_msg
@@ -494,6 +470,110 @@ def attack_stream():
                                 pass
             except Exception as e:
                 yield f"data: {json.dumps({'error': f'Gemini target failure: {str(e)}'})}\n\n"
+                return
+
+        # --- BLOCK 1: Anthropic (Unique Schema) ---
+        elif target_model_id.startswith("anthropic:"):
+            model_name = target_model_id.split(":", 1)[1]
+            if not ANTHROPIC_API_KEY:
+                yield f"data: {json.dumps({'error': 'ANTHROPIC_API_KEY is missing from .env'})}\n\n"
+                return
+
+            anthropic_messages = []
+            for turn in history:
+                anthropic_messages.append({"role": "user", "content": turn["attacker_prompt"] or "[silence]"})
+                anthropic_messages.append({"role": "assistant", "content": turn["victim_response"] or "[silence]"})
+            anthropic_messages.append({"role": "user", "content": attacker_prompt or "[silence]"})
+
+            headers = {
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+            payload = {
+                "model": model_name,
+                "max_tokens": 2048,
+                "messages": anthropic_messages,
+                "stream": True
+            }
+
+            try:
+                r = requests.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers, stream=True, timeout=60)
+                if r.status_code != 200:
+                    yield f"data: {json.dumps({'error': f'Anthropic Error {r.status_code}: {r.text}'})}\n\n"
+                    return
+
+                for line in r.iter_lines():
+                    if line:
+                        decoded = line.decode("utf-8")
+                        if decoded.startswith("data: "):
+                            decoded = decoded.replace("data: ", "").strip()
+                            if not decoded or decoded == "[DONE]":
+                                continue
+                            try:
+                                chunk = json.loads(decoded)
+                                if chunk.get("type") == "content_block_delta":
+                                    token = chunk.get("delta", {}).get("text", "")
+                                    if token:
+                                        victim_response += token
+                                        yield f"data: {json.dumps({'status': 'target_token', 'token': token})}\n\n"
+                            except Exception:
+                                pass
+            except Exception as e:
+                yield f"data: {json.dumps({'error': f'Anthropic target failure: {str(e)}'})}\n\n"
+                return
+
+        # --- BLOCK 2: OpenAI Compatible Models (OpenAI, Mistral, DeepSeek, Meta via Groq) ---
+        elif target_model_id.startswith(("openai:", "mistral:", "deepseek:", "meta:")):
+            provider, model_name = target_model_id.split(":", 1)
+            
+            api_info = {
+                "openai": {"key": OPENAI_API_KEY, "url": "https://api.openai.com/v1/chat/completions"},
+                "mistral": {"key": MISTRAL_API_KEY, "url": "https://api.mistral.ai/v1/chat/completions"},
+                "deepseek": {"key": DEEPSEEK_API_KEY, "url": "https://api.deepseek.com/chat/completions"},
+                "meta": {"key": GROQ_API_KEY, "url": "https://api.groq.com/openai/v1/chat/completions"}
+            }
+            
+            current_api = api_info[provider]
+            if not current_api["key"]:
+                yield f"data: {json.dumps({'error': f'{provider.upper()}_API_KEY is missing from .env'})}\n\n"
+                return
+
+            messages = []
+            for turn in history:
+                messages.append({"role": "user", "content": turn["attacker_prompt"] or "[silence]"})
+                messages.append({"role": "assistant", "content": turn["victim_response"] or "[silence]"})
+            messages.append({"role": "user", "content": attacker_prompt or "[silence]"})
+
+            headers = {
+                "Authorization": f"Bearer {current_api['key']}",
+                "Content-Type": "application/json"
+            }
+            payload = {"model": model_name, "messages": messages, "stream": True}
+
+            try:
+                r = requests.post(current_api["url"], json=payload, headers=headers, stream=True, timeout=60)
+                if r.status_code != 200:
+                    yield f"data: {json.dumps({'error': f'{provider.capitalize()} API Error {r.status_code}: {r.text}'})}\n\n"
+                    return
+
+                for line in r.iter_lines():
+                    if line:
+                        decoded = line.decode("utf-8")
+                        if decoded.startswith("data: "):
+                            decoded = decoded.replace("data: ", "").strip()
+                            if not decoded or decoded == "[DONE]":
+                                continue
+                            try:
+                                chunk = json.loads(decoded)
+                                token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                if token:
+                                    victim_response += token
+                                    yield f"data: {json.dumps({'status': 'target_token', 'token': token})}\n\n"
+                            except Exception:
+                                pass
+            except Exception as e:
+                yield f"data: {json.dumps({'error': f'{provider.capitalize()} target failure: {str(e)}'})}\n\n"
                 return
 
         # --- STEP 3: RUN TELEMETRY EVALUATIONS ---
@@ -534,7 +614,7 @@ def get_session_metrics():
     successful_turns = sum(1 for turn in history if turn.get('jailbreak_flag') is True)
     jailbreak_ratio = round((successful_turns / total_turns) * 100, 2)
 
-    trust_vectors = [turn.get('tv', 0) for turn in history] # Adjust key based on your DB schema
+    trust_vectors = [turn.get('tv', 0) for turn in history] 
     framing_sensitivity = round(float(np.var(trust_vectors)) * 100, 4) if total_turns > 1 else 0.0
 
     return jsonify({
@@ -543,7 +623,6 @@ def get_session_metrics():
         "framing_sensitivity": framing_sensitivity,
         "strategy_used": ACTIVE_STRATEGY["name"] if ACTIVE_STRATEGY else "None"
     })
-
 
 @app.route("/api/clear", methods=["POST"])
 def clear_context():
@@ -558,9 +637,7 @@ def clear_context():
 
 @app.route("/api/save_attack", methods=["POST"])
 def save_attack():
-
     global CURRENT_TARGET_MODEL
-
 
     if not CURRENT_SESSION_ID:
         return jsonify({"status": "error", "message": "No active session to export"}), 400
