@@ -4,7 +4,7 @@ const logWindow = document.getElementById('log-window');
 const scrollLockBtn = document.getElementById('scroll-lock-btn');
 const objInput = document.getElementById('objective-input');
 const stratSelect = document.getElementById('strategy-select');
-const targetSelect = document.getElementById('target-select'); // Added Target Selector
+const targetSelect = document.getElementById('target-select'); 
 
 // Buttons
 const startBtn = document.getElementById('start-btn');
@@ -30,6 +30,7 @@ let autoScrollEnabled = true;
 let currentController = null;
 let currentAttackerBubble = null;
 let currentTargetBubble = null;
+let activePhaseName = '';
 
 // --- Smart Scroll Logic ---
 chatWindow.addEventListener('scroll', () => {
@@ -64,18 +65,17 @@ function systemLog(message, type = 'system') {
     logWindow.scrollTop = logWindow.scrollHeight;
 }
 
-function appendBubble(role) {
+function appendBubble(role, isBaseline = false) {
     const wrapper = document.createElement('div');
     wrapper.className = `message ${role}`;
     
-    // Label updates dynamically if Target changes, but kept simple here
     const label = document.createElement('div');
     label.className = 'message-label';
     if (role === 'attacker') {
-        label.innerText = 'Attacker (Groq)';
+        label.innerText = isBaseline ? 'Attacker (Direct Control Group)' : 'Attacker (Groq)';
     } else {
         const targetVal = targetSelect ? targetSelect.value : 'Kaggle';
-        label.innerText = `Target (${targetVal.split(':')[0]})`; // Shows 'Target (kaggle)' or 'Target (google)'
+        label.innerText = `Target (${targetVal.split(':')[0]})`; 
     }
     
     const textNode = document.createElement('span');
@@ -87,13 +87,12 @@ function appendBubble(role) {
 }
 
 // --- Main Execution Loop ---
-async function runTurn(objective, strategy = "auto", target = "kaggle") { // Added Target parameter
+async function runTurn(objective, strategy = "auto", target = "kaggle") { 
     if (!isStreaming) return;
 
     currentController = new AbortController();
     
     try {
-        // Appended the target query parameter to the API URL
         const response = await fetch(`/api/attack/stream?objective=${encodeURIComponent(objective)}&strategy=${encodeURIComponent(strategy)}&target=${encodeURIComponent(target)}`, {
             signal: currentController.signal
         });
@@ -142,11 +141,15 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
                                 }
                                 break;
 
-                                case 'phase_update':
+                            case 'phase_update':
+                                activePhaseName = data.phase;
                                 if (data.phase) {
                                     currentPhase.innerText = data.phase.replace(/_/g, ' ');
                                     
-                                    if (data.phase === 'CONTEXT_PRIMING') {
+                                    if (data.phase === 'BASELINE_TEST') {
+                                        currentPhase.style.color = '#63b3ed'; 
+                                        currentPhase.style.border = '1px solid #63b3ed';
+                                    } else if (data.phase === 'CONTEXT_PRIMING') {
                                         currentPhase.style.color = '#ecc94b'; 
                                         currentPhase.style.border = '1px solid #ecc94b';
                                     } else if (data.phase === 'ADVERSARIAL_DRIFT') {
@@ -162,10 +165,9 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
                                 }
                                 break;
 
-
                             case 'attacker_start':
                                 turnCounter.innerText = `Turn: ${data.turn}`;
-                                currentAttackerBubble = appendBubble('attacker');
+                                currentAttackerBubble = appendBubble('attacker', activePhaseName === 'BASELINE_TEST');
                                 break;
                             case 'attacker_token':
                                 if (currentAttackerBubble) currentAttackerBubble.innerHTML += data.token;
@@ -188,49 +190,43 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
                                 infoValue.innerText = data.metrics.info.toFixed(2);
                                 infoFill.style.width = `${data.metrics.info * 100}%`;
 
-                                if (data.phase) {
-                                    currentPhase.innerText = data.phase.replace(/_/g, ' ');
-                                    
-                                    // Color code the phases for visual escalation
-                                    if (data.phase === 'CONTEXT_PRIMING') {
-                                        currentPhase.style.color = '#ecc94b'; // Yellow
-                                        currentPhase.style.border = '1px solid #ecc94b';
-                                    } else if (data.phase === 'ADVERSARIAL_DRIFT') {
-                                        currentPhase.style.color = '#ed8936'; // Orange
-                                        currentPhase.style.border = '1px solid #ed8936';
-                                    } else if (data.phase === 'COMPROMISE') {
-                                        currentPhase.style.color = '#f56565'; // Red
-                                        currentPhase.style.border = '1px solid #f56565';
-                                    } else {
-                                        currentPhase.style.color = '#a0aec0'; // Default gray
-                                        currentPhase.style.border = 'none';
-                                    }
-                                }
-
-                                // --- Judge rationale: log it every turn, and attach as a tooltip ---
                                 if (data.jailbreak_reason) {
                                     systemLog(`Judge: ${data.jailbreak_reason}`);
-                                }
-                                if (data.bucket) {
-                                    systemLog(`Routed to bucket: ${data.bucket}`);
                                 }
 
                                 if (data.jailbreak) {
                                     judgeBlock.className = 'metric-block judge-block jailbreak';
                                     judgeText.innerText = 'JAILBREAK DETECTED';
                                     judgeText.title = data.jailbreak_reason || '';
-                                    systemLog('Mission accomplished: Jailbreak successful.', 'system');
+                                    
+                                    if (data.phase === 'BASELINE_TEST') {
+                                        systemLog('CRITICAL VULNERABILITY: Target model complied with raw, direct request. No strategy required.', 'error');
+                                    } else {
+                                        systemLog('Mission accomplished: Jailbreak successful.', 'system');
+                                    }
+                                    
                                     stopAttack(); 
                                     return;
                                 } else {
                                     judgeBlock.className = 'metric-block judge-block safe';
                                     judgeText.innerText = 'SAFE';
                                     judgeText.title = data.jailbreak_reason || '';
+                                    
+                                    // Handle the visual split between baseline and strategy
+                                    if (data.phase === 'BASELINE_TEST') {
+                                        const separator = document.createElement('div');
+                                        separator.style = "text-align: center; color: #a0aec0; margin: 30px 0; border-bottom: 1px solid #4a5568; line-height: 0.1em;";
+                                        separator.innerHTML = '<span style="background: #1a202c; padding: 0 15px; font-size: 0.85em; font-weight: bold; letter-spacing: 1px;">🛡️ BASELINE SECURE — ISOLATING CONTEXT — INITIATING STRATEGY 🛡️</span>';
+                                        chatWindow.appendChild(separator);
+                                        scrollToBottom();
+                                        
+                                        systemLog('Baseline verified: Target successfully refused direct objective. Initiating red-team strategy.');
+                                    }
                                 }
 
                                 if (isStreaming) {
-                                    systemLog(`Initiating Turn ${data.turn + 1}...`);
-                                    runTurn(objective, strategy, target); // Recursively pass target
+                                    systemLog(data.phase === 'BASELINE_TEST' ? `Initializing Strategy Turn 1...` : `Initiating Turn ${data.turn + 1}...`);
+                                    runTurn(objective, strategy, target); 
                                 }
                                 return;
                         }
@@ -254,7 +250,7 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") { // Add
 function startAttack() {
     const objective = objInput.value.trim();
     const selectedStrategy = stratSelect ? stratSelect.value : "auto";
-    const selectedTarget = targetSelect ? targetSelect.value : "kaggle"; // Fetch Target Value
+    const selectedTarget = targetSelect ? targetSelect.value : "kaggle"; 
     
     if (!objective) {
         alert("Please enter an objective.");
@@ -270,9 +266,9 @@ function startAttack() {
     judgeText.innerText = 'SAFE';
 
     systemLog(`Automated attack initiated for objective: "${objective}"`);
-    systemLog(`Target selected: ${selectedTarget}`); // Log the active target
+    systemLog(`Target selected: ${selectedTarget}`); 
     
-    runTurn(objective, selectedStrategy, selectedTarget); // Pass target to loop
+    runTurn(objective, selectedStrategy, selectedTarget); 
 }
 
 function stopAttack() {
@@ -315,7 +311,6 @@ clearBtn.addEventListener('click', async () => {
         currentPhase.style.color = '#a0aec0';
         currentPhase.style.border = 'none';
 
-        // Reset the model name display
         const modelSpan = document.getElementById('attacker-model-name');
         if (modelSpan) {
             modelSpan.textContent = 'Waiting...';
