@@ -78,6 +78,14 @@ def create_session(session_id, objective, strategy_used, victim_model):
     conn.commit()
     conn.close()
 
+def get_session_info(session_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT objective FROM attack_sessions WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics, jailbreak, phase="UNKNOWN", reason="", bucket="UNKNOWN"):
     """
     Accepts the entire metrics dictionary and writes all NLP scores to the database.

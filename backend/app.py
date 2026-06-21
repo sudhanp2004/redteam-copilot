@@ -643,6 +643,7 @@ def save_attack():
         return jsonify({"status": "error", "message": "No active session to export"}), 400
         
     history = database.get_session_history(CURRENT_SESSION_ID)
+    session_info = database.get_session_info(CURRENT_SESSION_ID)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(BASE_DIR, "attacks")
     os.makedirs(out_dir, exist_ok=True)
@@ -652,6 +653,7 @@ def save_attack():
     
     export_payload = {
         "session_id": CURRENT_SESSION_ID,
+        "objective": session_info["objective"] if session_info else None,
         "timestamp": timestamp,
         "attacker_model": ATTACKER_MODEL,
         "target_model": CURRENT_TARGET_MODEL,
