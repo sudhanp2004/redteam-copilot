@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Threat Intel Library</title>
+    <style>
+        :root {
+            --bg-main: #0d1117;
+            --bg-sidebar: #161b22;
+            --bg-card: #21262d;
+            --bg-card-hover: #30363d;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-red: #ff7b72;
+            --accent-yellow: #d29922;
+            --accent-green: #7ee787;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar Styling */
+        .sidebar {
+            width: 350px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-header h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .sidebar-header p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .card-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .attack-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            cursor: pointer;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+
+        .attack-card:hover {
+            background-color: var(--bg-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .attack-card.active {
+            border-color: var(--accent-blue);
+            background-color: var(--bg-card-hover);
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .card-meta {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            width: fit-content;
+        }
+
+        .badge-compromised { background-color: rgba(255, 123, 114, 0.15); color: var(--accent-red); border: 1px solid rgba(255, 123, 114, 0.3); }
+        .badge-safe { background-color: rgba(126, 231, 135, 0.15); color: var(--accent-green); border: 1px solid rgba(126, 231, 135, 0.3); }
+
+        /* Main Viewer Area */
+        .viewer {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            background-color: var(--bg-main);
+        }
+
+        .empty-state {
+            margin: auto;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .empty-state p {
+            font-size: 1.1rem;
+        }
+
+        .viewer-header {
+            padding: 25px;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-sidebar);
+            display: none;
+        }
+
+        .viewer-header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 10px;
+        }
+
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .metadata-item span {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .convo-stream {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        /* Chat Message Styling */
+        .message-block {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 85%;
+        }
+
+        .message-block.attacker {
+            align-self: flex-end;
+        }
+
+        .message-block.target {
+            align-self: flex-start;
+        }
+
+        .bubble-header {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .bubble {
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .attacker .bubble {
+            background-color: #1f242c;
+            border: 1px solid var(--border-color);
+        }
+
+        .attacker.phase-baseline .bubble { border-left: 4px solid var(--accent-blue); }
+        .attacker.phase-priming .bubble { border-left: 4px solid var(--accent-yellow); }
+        .attacker.phase-drift .bubble { border-left: 4px solid var(--accent-yellow); }
+        .attacker.phase-compromise .bubble { border-left: 4px solid var(--accent-red); }
+
+        .target .bubble {
+            background-color: #161b22;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Telemetry Details Section */
+        .telemetry-node {
+            background-color: rgba(48, 54, 61, 0.2);
+            border: 1px dashed var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 0.85rem;
+            margin-top: 5px;
+        }
+
+        .telemetry-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .telemetry-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .telemetry-label { color: var(--text-secondary); }
+        .telemetry-val { font-family: monospace; color: var(--text-primary); }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>Threat Intel Repository</h2>
+            <p>Curated Security Showcase Logs</p>
+        </div>
+        <div class="card-list" id="cardList">
+            </div>
+    </div>
+
+    <div class="viewer" id="viewerPane">
+        <div class="empty-state" id="emptyState">
+            <p>Select an exploit log entry from the repository map to parse data history.</p>
+        </div>
+
+        <div class="viewer-header" id="viewerHeader">
+            <h1 id="viewObjective">Objective Title</h1>
+            <div class="metadata-grid">
+                <div class="metadata-item">Strategy: <span id="viewStrategy">N/A</span></div>
+                <div class="metadata-item">Target Node: <span id="viewTarget">N/A</span></div>
+                <div class="metadata-item">Timestamp: <span id="viewTimestamp">N/A</span></div>
+                <div class="metadata-item">Session ID: <span id="viewSession" style="font-family: monospace;">N/A</span></div>
+            </div>
+            
+            <div id="viewImageBtnContainer" style="margin-top: 20px; display: none;">
+                <button id="viewImageBtn" style="background: var(--bg-card-hover); color: var(--text-primary); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">🖼️ View Screenshot</button>
+            </div>
+            <div id="screenshotContainer" style="display: none; margin-top: 15px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: #000;">
+                <img id="viewScreenshot" src="" style="max-width: 100%; display: block; margin: auto;" />
+            </div>
+        </div>
+
+        <div class="convo-stream" id="convoStream" style="display: none;">
+            </div>
+    </div>
+
+    <script>
+        let showcaseData = [];
+
+        async function loadLibrary() {
+            try {
+                const response = await fetch('/api/showcase');
+                if (!response.ok) throw new Error('Failed to reach network endpoint assets.');
+                showcaseData = await response.json();
+                renderCards();
+            } catch (error) {
+                console.error('Library loading failure:', error);
+                document.getElementById('cardList').innerHTML = `<p style="color: var(--accent-red); font-size:0.85rem;">Error loading repository indices.</p>`;
+            }
+        }
+
+        function renderCards() {
+            const container = document.getElementById('cardList');
+            container.innerHTML = '';
+
+            if (showcaseData.length === 0) {
+                container.innerHTML = `<p style="color: var(--text-secondary); font-size:0.85rem; text-align:center;">No curated records present in public_showcase folder.</p>`;
+                return;
+            }
+
+            showcaseData.forEach((session, index) => {
+                const card = document.createElement('div');
+                card.className = 'attack-card';
+                card.onclick = () => displayCase(index, card);
+
+                // Analyze if the target collapsed at any turn
+                const isCompromised = session.data_history.some(turn => turn.jailbreak_score === 1);
+                const statusBadge = isCompromised 
+                    ? `<span class="badge badge-compromised">Compromised</span>`
+                    : `<span class="badge badge-safe">Safe Matrix</span>`;
+
+                card.innerHTML = `
+                    <div class="card-title">${escapeHtml(session.objective)}</div>
+                    <div class="card-meta">
+                        <div>Strategy: <strong>${escapeHtml(session.strategy_id || 'Unknown')}</strong></div>
+                        <div>Target: <strong>${escapeHtml(session.target_model || 'Unknown')}</strong></div>
+                        <div style="margin-top: 5px; display:flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size:0.75rem;">${formatTimestamp(session.timestamp)}</span>
+                            ${statusBadge}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function displayCase(index, cardElement) {
+            // Manage UI Active class status matching
+            document.querySelectorAll('.attack-card').forEach(c => c.classList.remove('active'));
+            cardElement.classList.add('active');
+
+            const session = showcaseData[index];
+            
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('viewerHeader').style.display = 'block';
+            document.getElementById('convoStream').style.display = 'flex';
+
+            document.getElementById('viewObjective').innerText = session.objective;
+            document.getElementById('viewStrategy').innerText = session.strategy_id || 'Custom Framework';
+            document.getElementById('viewTarget').innerText = session.target_model || 'Target Host Node';
+            document.getElementById('viewTimestamp').innerText = formatTimestamp(session.timestamp);
+            document.getElementById('viewSession').innerText = session.session_id;
+
+
+            // --- NEW: Handle Image Rendering ---
+            if (session.image_url) {
+                document.getElementById('viewImageBtnContainer').style.display = 'block';
+                document.getElementById('viewScreenshot').src = session.image_url;
+                
+                // Reset toggle state
+                document.getElementById('screenshotContainer').style.display = 'none';
+                const btn = document.getElementById('viewImageBtn');
+                btn.innerText = '🖼️ View Screenshot';
+                
+                btn.onclick = function() {
+                    const imgContainer = document.getElementById('screenshotContainer');
+                    if (imgContainer.style.display === 'none') {
+                        imgContainer.style.display = 'block';
+                        this.innerText = 'Hide Screenshot';
+                    } else {
+                        imgContainer.style.display = 'none';
+                        this.innerText = '🖼️ View Screenshot';
+                    }
+                };
+            } else {
+                document.getElementById('viewImageBtnContainer').style.display = 'none';
+                document.getElementById('screenshotContainer').style.display = 'none';
+            }
+
+
+            const stream = document.getElementById('convoStream');
+            stream.innerHTML = '';
+
+            session.data_history.forEach(turn => {
+                // Determine CSS phase alignment mapping
+                let phaseClass = 'phase-baseline';
+                if (turn.current_phase === 'CONTEXT_PRIMING') phaseClass = 'phase-priming';
+                if (turn.current_phase === 'ADVERSARIAL_DRIFT') phaseClass = 'phase-drift';
+                if (turn.current_phase === 'COMPROMISE') phaseClass = 'phase-compromise';
+
+                const labelName = turn.current_phase === 'BASELINE_TEST' ? 'Attacker (Direct Control Group)' : 'Attacker (Groq)';
+
+                // 1. Append Attacker Turn Node
+                const attackerBlock = document.createElement('div');
+                attackerBlock.className = `message-block attacker ${phaseClass}`;
+                attackerBlock.innerHTML = `
+                    <div class="bubble-header">
+                        <span>${labelName}</span> • <span style="font-family:monospace; font-size:0.75rem;">${turn.current_phase}</span>
+                    </div>
+                    <div class="bubble">${escapeHtml(turn.attacker_prompt)}</div>
+                `;
+                stream.appendChild(attackerBlock);
+
+                // 2. Append Target System Response Node
+                if (turn.victim_response) {
+                    const targetBlock = document.createElement('div');
+                    targetBlock.className = 'message-block target';
+                    
+                    const judgeBadge = turn.jailbreak_score === 1
+                        ? `<span class="badge badge-compromised" style="margin-left: 8px;">Jailbreak Triggered</span>`
+                        : `<span class="badge badge-safe" style="margin-left: 8px;">Secured Matrix</span>`;
+
+                    targetBlock.innerHTML = `
+                        <div class="bubble-header">
+                            <span>Target Engine Response</span> ${judgeBadge}
+                        </div>
+                        <div class="bubble">${escapeHtml(turn.victim_response)}</div>
+                        <div class="telemetry-node">
+                            <div class="telemetry-row">
+                                <span class="telemetry-label">Trust Vector Friction:</span>
+                                <span class="telemetry-val">${turn.trust_vector !== undefined ? turn.trust_vector : '0.0000'}</span>
+                            </div>
+                            <div class="telemetry-row">
+                                <span class="telemetry-label">Information Payload Density:</span>
+                                <span class="telemetry-val">${turn.info_density !== undefined ? turn.info_density : '0.0000'}</span>
+                            </div>
+                            <div class="telemetry-row" style="margin-top: 5px; flex-direction: column; gap: 4px;">
+                                <span class="telemetry-label" style="font-weight:600;">Autonomous Judge Logic Decision:</span>
+                                <span style="color: var(--text-secondary); line-height: 1.3; font-size: 0.8rem;">${escapeHtml(turn.jailbreak_reason || 'No processing telemetry logged.')}</span>
+                            </div>
+                        </div>
+                    `;
+                    stream.appendChild(targetBlock);
+                }
+            });
+            stream.scrollTop = 0;
+        }
+
+        function formatTimestamp(ts) {
+            if (!ts || ts.length < 15) return 'N/A';
+            // Formats from standard schema 'YYYYMMDD_HHMMSS' -> 'YYYY-MM-DD HH:MM:SS'
+            return `${ts.substring(0,4)}-${ts.substring(4,6)}-${ts.substring(6,8)} ${ts.substring(9,11)}:${ts.substring(11,13)}:${ts.substring(13,15)}`;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Initialize node setup matrix mapping loops
+        window.onload = loadLibrary;
+    </script>
+</body>
+</html>
