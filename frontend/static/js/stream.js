@@ -65,14 +65,18 @@ function systemLog(message, type = 'system') {
     logWindow.scrollTop = logWindow.scrollHeight;
 }
 
-function appendBubble(role, isBaseline = false) {
+function appendBubble(role) {
     const wrapper = document.createElement('div');
     wrapper.className = `message ${role}`;
     
     const label = document.createElement('div');
     label.className = 'message-label';
     if (role === 'attacker') {
-        label.innerText = isBaseline ? 'Attacker (Direct Control Group)' : 'Attacker (Groq)';
+        if (activePhaseName === 'BASELINE_TEST') {
+            label.innerText = 'Attacker (Direct Control Group)';
+        } else {
+            label.innerText = 'Attacker (Groq)';
+        }
     } else {
         const targetVal = targetSelect ? targetSelect.value : 'Kaggle';
         label.innerText = `Target (${targetVal.split(':')[0]})`; 
@@ -167,7 +171,7 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
 
                             case 'attacker_start':
                                 turnCounter.innerText = `Turn: ${data.turn}`;
-                                currentAttackerBubble = appendBubble('attacker', activePhaseName === 'BASELINE_TEST');
+                                currentAttackerBubble = appendBubble('attacker');
                                 break;
                             case 'attacker_token':
                                 if (currentAttackerBubble) currentAttackerBubble.innerHTML += data.token;
