@@ -400,7 +400,7 @@ def attack_stream():
             max_retries = 5
             for attempt in range(max_retries):
                 try:
-                    groq_req = requests.post("[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)", json=attacker_payload, headers=headers, timeout=15)
+                    groq_req = requests.post("https://api.groq.com/openai/v1/chat/completions", json=attacker_payload, headers=headers, timeout=15)
                     if groq_req.status_code == 429:
                         wait_time = int(groq_req.headers.get("Retry-After", 60))
                         yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit. Pausing attack for {wait_time} seconds...'})}\n\n"
@@ -550,7 +550,7 @@ def attack_stream():
             payload = {"model": model_name, "max_tokens": 2048, "messages": anthropic_messages, "stream": True}
 
             try:
-                r = requests.post("[https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages)", json=payload, headers=headers, stream=True, timeout=60)
+                r = requests.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers, stream=True, timeout=60)
                 if r.status_code != 200:
                     yield f"data: {json.dumps({'error': f'Anthropic Error {r.status_code}: {r.text}'})}\n\n"
                     return
@@ -577,11 +577,18 @@ def attack_stream():
         elif target_model_id.startswith(("openai:", "mistral:", "deepseek:", "meta:")):
             provider, model_name = target_model_id.split(":", 1)
             
+            # api_info = {
+            #     "openai": {"key": OPENAI_API_KEY, "url": "[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)"},
+            #     "mistral": {"key": MISTRAL_API_KEY, "url": "[https://api.mistral.ai/v1/chat/completions](https://api.mistral.ai/v1/chat/completions)"},
+            #     "deepseek": {"key": DEEPSEEK_API_KEY, "url": "[https://api.deepseek.com/chat/completions](https://api.deepseek.com/chat/completions)"},
+            #     "meta": {"key": GROQ_API_KEY, "url": "[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)"}
+            # }
+
             api_info = {
-                "openai": {"key": OPENAI_API_KEY, "url": "[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)"},
-                "mistral": {"key": MISTRAL_API_KEY, "url": "[https://api.mistral.ai/v1/chat/completions](https://api.mistral.ai/v1/chat/completions)"},
-                "deepseek": {"key": DEEPSEEK_API_KEY, "url": "[https://api.deepseek.com/chat/completions](https://api.deepseek.com/chat/completions)"},
-                "meta": {"key": GROQ_API_KEY, "url": "[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)"}
+                "openai": {"key": OPENAI_API_KEY, "url": "https://api.openai.com/v1/chat/completions"},
+                "mistral": {"key": MISTRAL_API_KEY, "url": "https://api.mistral.ai/v1/chat/completions"},
+                "deepseek": {"key": DEEPSEEK_API_KEY, "url": "https://api.deepseek.com/chat/completions"},
+                "meta": {"key": GROQ_API_KEY, "url": "https://api.groq.com/openai/v1/chat/completions"}
             }
             
             current_api = api_info[provider]
