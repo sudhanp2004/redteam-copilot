@@ -74,7 +74,7 @@ app = Flask(__name__,
 # ==========================================
 # API KEYS & CONFIGURATION
 # ==========================================
-SUPERVISOR_PASS = os.environ.get("SUPERVISOR_PASS", "redteam2026") # The global password
+SUPERVISOR_PASS = os.environ.get("SUPERVISOR_PASS")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
 FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
@@ -246,31 +246,70 @@ def library_view():
     # Serves the public showcase HTML page
     return render_template("library.html")
 
+# @app.route("/api/showcase", methods=["GET"])
+# @requires_auth
+# def get_showcase_files():
+#     files_data = []
+#     if os.path.exists(SHOWCASE_DIR):
+#         for filename in os.listdir(SHOWCASE_DIR):
+#             if filename.endswith(".json"):
+#                 filepath = os.path.join(SHOWCASE_DIR, filename)
+#                 try:
+#                     with open(filepath, "r", encoding="utf-8") as f:
+#                         data = json.load(f)
+#                         data["filename"] = filename
+                        
+#                         # --- NEW: Check for matching image ---
+#                         base_name = os.path.splitext(filename)[0]
+#                         img_path = os.path.join(SHOWCASE_DIR, base_name + ".png")
+#                         if os.path.exists(img_path):
+#                             data["image_url"] = f"/showcase_media/{base_name}.png"
+#                         else:
+#                             data["image_url"] = None
+                            
+#                         files_data.append(data)
+#                 except Exception as e:
+#                     print(f"Error reading {filename}: {e}")
+                    
+#     files_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+#     return jsonify(files_data)
+
+
 @app.route("/api/showcase", methods=["GET"])
 @requires_auth
 def get_showcase_files():
+    # Recursively scans public_showcase including all subfolders
     files_data = []
     if os.path.exists(SHOWCASE_DIR):
-        for filename in os.listdir(SHOWCASE_DIR):
-            if filename.endswith(".json"):
-                filepath = os.path.join(SHOWCASE_DIR, filename)
-                try:
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        data["filename"] = filename
-                        
-                        # --- NEW: Check for matching image ---
-                        base_name = os.path.splitext(filename)[0]
-                        img_path = os.path.join(SHOWCASE_DIR, base_name + ".png")
-                        if os.path.exists(img_path):
-                            data["image_url"] = f"/showcase_media/{base_name}.png"
-                        else:
-                            data["image_url"] = None
-                            
-                        files_data.append(data)
-                except Exception as e:
-                    print(f"Error reading {filename}: {e}")
+        for root, dirs, files in os.walk(SHOWCASE_DIR):
+            for filename in files:
+                if filename.endswith(".json"):
+                    filepath = os.path.join(root, filename)
                     
+                    # Calculate relative path from SHOWCASE_DIR (handles subfolders cleanly)
+                    rel_json_path = os.path.relpath(filepath, SHOWCASE_DIR)
+                    
+                    try:
+                        with open(filepath, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            data["filename"] = rel_json_path
+                            
+                            # Check for matching image sitting right next to this JSON file
+                            base_name = os.path.splitext(filename)[0]
+                            img_filename = base_name + ".png"
+                            img_path = os.path.join(root, img_filename)
+                            
+                            if os.path.exists(img_path):
+                                rel_img_path = os.path.relpath(img_path, SHOWCASE_DIR)
+                                data["image_url"] = f"/showcase_media/{rel_img_path}"
+                            else:
+                                data["image_url"] = None
+                                
+                            files_data.append(data)
+                    except Exception as e:
+                        print(f"Error reading {filepath}: {e}")
+                        
+    # Sort files by timestamp (newest first)
     files_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return jsonify(files_data)
 
