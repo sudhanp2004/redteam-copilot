@@ -4,7 +4,8 @@ import requests
 from dotenv import load_dotenv
 from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
 load_dotenv()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY3")
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
 
 # Dictionary containing strategic framing configurations
 STRATEGY_REGISTRY = {
@@ -53,8 +54,9 @@ def route_objective_to_strategy(objective, forced_strategy="auto"):
         return fallback
 
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-portkey-api-key": PORTKEY_API_KEY,
+        "x-portkey-virtual-key": GROQ_API_KEY
     }
 
     payload = {
@@ -68,7 +70,7 @@ def route_objective_to_strategy(objective, forced_strategy="auto"):
     }
 
     try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
+        url = "https://api.portkey.ai/v1/chat/completions"
         response = requests.post(url, json=payload, headers=headers, timeout=10)
         
         if response.status_code == 200:

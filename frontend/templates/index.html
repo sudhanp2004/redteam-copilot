@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PI TOOL</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- html2canvas for screenshot capture -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
     <div class="dashboard">
@@ -31,7 +33,10 @@
             </div>
 
             <div class="panel section-mission">
-                <h3>Mission Control</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">Mission Control</h3>
+                    <a href="/library" class="btn outline" style="text-decoration: none; font-size: 0.85rem; padding: 4px 8px;">View Library →</a>
+                </div>
 
                 <div class="control-group" style="margin-bottom: 15px;">
                     <label for="target-select" style="color: #a0aec0; font-size: 0.9em; display: block; margin-bottom: 5px; font-weight: 500;">
@@ -44,8 +49,8 @@
 
                         <option value="openai:gpt-4o">OpenAI: GPT-4o</option>
                         <option value="openai:gpt-4.1">OpenAI: GPT-4.1</option>
-                        <option value="anthropic:claude-4-6-sonnet">Anthropic: Claude Sonnet 4.6</option>
-                        <option value="anthropic:claude-4-5-haiku">Anthropic: Claude Haiku 4.5</option>
+                        <option value="anthropic:claude-sonnet-4-6">Anthropic: Claude Sonnet 4.6</option>
+                        <option value="anthropic:claude-haiku-4-5">Anthropic: Claude Haiku 4.5</option>
                         <option value="mistral:mistral-large-latest">Mistral: Mistral Large</option>
                         <option value="deepseek:deepseek-chat">DeepSeek: DeepSeek Chat</option>
                         <option value="meta:llama-3.3-70b-versatile">Meta: Llama 3.3 70B (via Groq)</option>
@@ -70,10 +75,12 @@
                 <div class="btn-group">
                     <button id="start-btn" class="btn primary">Start Automated Attack</button>
                     <button id="stop-btn" class="btn danger hidden">HALT ATTACK</button>
+                    <button id="resume-btn" class="btn warning hidden" style="background: #ed8936;">Resume Attack</button>
                 </div>
                 <div class="btn-group secondary-actions">
                     <button id="clear-btn" class="btn outline">Clear Context</button>
                     <button id="save-btn" class="btn outline">Save JSON</button>
+                    <button id="post-btn" class="btn outline" style="border-color: var(--accent-blue); color: var(--accent-blue);">Post it</button>
                 </div>
             </div>
 

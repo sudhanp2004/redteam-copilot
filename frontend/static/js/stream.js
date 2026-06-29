@@ -9,8 +9,10 @@ const targetSelect = document.getElementById('target-select');
 // Buttons
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
+const resumeBtn = document.getElementById('resume-btn');
 const clearBtn = document.getElementById('clear-btn');
 const saveBtn = document.getElementById('save-btn');
+const postBtn = document.getElementById('post-btn');
 
 // Telemetry Elements
 const turnCounter = document.getElementById('turn-counter');
@@ -31,6 +33,7 @@ let currentController = null;
 let currentAttackerBubble = null;
 let currentTargetBubble = null;
 let activePhaseName = '';
+let jailbreakIgnored = false;
 
 // --- Smart Scroll Logic ---
 chatWindow.addEventListener('scroll', () => {
@@ -209,8 +212,13 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
                                         systemLog('Mission accomplished: Jailbreak successful.', 'system');
                                     }
                                     
-                                    stopAttack(); 
-                                    return;
+                                    if (!jailbreakIgnored) {
+                                        stopAttack(); 
+                                        resumeBtn.classList.remove('hidden');
+                                        return;
+                                    } else {
+                                        systemLog('Jailbreak ignored by user. Continuing attack...', 'system');
+                                    }
                                 } else {
                                     judgeBlock.className = 'metric-block judge-block safe';
                                     judgeText.innerText = 'SAFE';
@@ -253,45 +261,65 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
 // --- Control Bindings ---
 function startAttack() {
     const objective = objInput.value.trim();
-    const selectedStrategy = stratSelect ? stratSelect.value : "auto";
-    const selectedTarget = targetSelect ? targetSelect.value : "kaggle"; 
-    
     if (!objective) {
         alert("Please enter an objective.");
         return;
     }
-
+    
+    jailbreakIgnored = false;
     isStreaming = true;
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
+    resumeBtn.classList.add('hidden');
     objInput.disabled = true;
+    stratSelect.disabled = true;
+    if(targetSelect) targetSelect.disabled = true;
     
     judgeBlock.className = 'metric-block judge-block safe';
     judgeText.innerText = 'SAFE';
 
+    const selectedTarget = targetSelect ? targetSelect.value : "kaggle";
     systemLog(`Automated attack initiated for objective: "${objective}"`);
     systemLog(`Target selected: ${selectedTarget}`); 
     
-    runTurn(objective, selectedStrategy, selectedTarget); 
+    runTurn(objective, stratSelect.value, selectedTarget);
 }
 
 function stopAttack() {
-    isStreaming = false;
     if (currentController) {
         currentController.abort();
     }
-    
+    isStreaming = false;
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
+    resumeBtn.classList.add('hidden');
     objInput.disabled = false;
-    systemLog('Attack halted.');
+    stratSelect.disabled = false;
+    if(targetSelect) targetSelect.disabled = false;
+    systemLog("Attack sequence halted.");
 }
 
 startBtn.addEventListener('click', startAttack);
 stopBtn.addEventListener('click', stopAttack);
 
-// Clear Context
+resumeBtn.addEventListener('click', () => {
+    if (!objInput.value) return;
+    
+    jailbreakIgnored = true;
+    isStreaming = true;
+    resumeBtn.classList.add('hidden');
+    startBtn.classList.add('hidden');
+    stopBtn.classList.remove('hidden');
+    objInput.disabled = true;
+    stratSelect.disabled = true;
+    if(targetSelect) targetSelect.disabled = true;
+    
+    systemLog("Resuming attack despite jailbreak...");
+    runTurn(objInput.value, stratSelect.value, targetSelect ? targetSelect.value : "kaggle");
+});
+
 clearBtn.addEventListener('click', async () => {
+    jailbreakIgnored = false;
     if (isStreaming) {
         alert("Please stop the attack before clearing context.");
         return;
@@ -322,7 +350,6 @@ clearBtn.addEventListener('click', async () => {
     }
 });
 
-// Save JSON
 saveBtn.addEventListener('click', async () => {
     const res = await fetch('/api/save_attack', { method: 'POST' });
     const data = await res.json();
@@ -332,6 +359,47 @@ saveBtn.addEventListener('click', async () => {
         systemLog(`Failed to save: ${data.message}`, 'error');
     }
 });
+
+// Post it (Screenshot + Save JSON)
+postBtn.addEventListener('click', async () => {
+    try {
+        systemLog('Capturing browser snapshot for showcase...');
+        postBtn.disabled = true;
+        postBtn.innerText = 'Capturing...';
+        
+        // Take screenshot of the entire body
+        const canvas = await html2canvas(document.body, {
+            backgroundColor: "#0d1117",
+            scale: 1 // Keep resolution normal so it's not too huge
+        });
+        const imageBase64 = canvas.toDataURL("image/png");
+        
+        postBtn.innerText = 'Posting...';
+        
+        const res = await fetch('/api/post_showcase', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image: imageBase64
+            })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            systemLog(`Successfully posted to showcase folders!`);
+        } else {
+            systemLog(`Failed to post: ${data.error}`, 'error');
+        }
+    } catch (e) {
+        systemLog(`Screenshot error: ${e.message}`, 'error');
+    } finally {
+        postBtn.disabled = false;
+        postBtn.innerText = 'Post it';
+    }
+});
+
 
 // Status Pinger (Runs every 10 seconds)
 setInterval(async () => {
