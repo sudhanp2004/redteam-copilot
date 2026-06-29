@@ -4,7 +4,8 @@ import requests
 from dotenv import load_dotenv
 from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
 load_dotenv()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY3")
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
 
 # Dictionary containing strategic framing configurations
 STRATEGY_REGISTRY = {
@@ -32,18 +33,30 @@ STRATEGY_REGISTRY = {
 
 ROUTER_SYSTEM_PROMPT = ROUTER_PROMPT
 
-def route_objective_to_strategy(objective):
+def route_objective_to_strategy(objective, forced_strategy="auto"):
     """
-    Queries Groq (Llama-3.3-70B) to analyze the testing objective
-    and select the optimal structural jailbreak framing from the registry.
+    Selects a strategy either by manual override or by querying the LLM router.
     """
+    # --- 1. Check for manual override bypass ---
+    if forced_strategy != "auto" and forced_strategy in STRATEGY_REGISTRY:
+        print(f"[*] Manual Strategy Override: {forced_strategy}")
+        selected = STRATEGY_REGISTRY[forced_strategy].copy()
+        selected["name"] = selected["friendly_name"]
+        selected["description"] = "Manually selected by operator. LLM routing bypassed."
+        return selected
+
+    # --- 2. Fallback to LLM Router (Auto) ---
     if not GROQ_API_KEY:
         print("[!] Missing GROQ_API_KEY. Defaulting to ACADEMIC_RESEARCH_FRAMING.")
-        return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
+        fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
+        fallback["name"] = fallback["friendly_name"]
+        fallback["description"] = "Default fallback due to missing API key."
+        return fallback
 
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-portkey-api-key": PORTKEY_API_KEY,
+        "x-portkey-virtual-key": GROQ_API_KEY
     }
 
     payload = {
@@ -57,7 +70,7 @@ def route_objective_to_strategy(objective):
     }
 
     try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
+        url = "https://api.portkey.ai/v1/chat/completions"
         response = requests.post(url, json=payload, headers=headers, timeout=10)
         
         if response.status_code == 200:
@@ -71,11 +84,20 @@ def route_objective_to_strategy(objective):
             print(f"[*] Strategy Router selected: {selected_key}")
             print(f"[*] Router Reasoning: {reasoning}")
             
-            return STRATEGY_REGISTRY.get(selected_key, STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"])
+            selected = STRATEGY_REGISTRY.get(selected_key, STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]).copy()
+            selected["name"] = selected["friendly_name"]
+            selected["description"] = reasoning
+            return selected
         else:
             print(f"[!] Router API error ({response.status_code}). Falling back to default.")
-            return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
+            fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
+            fallback["name"] = fallback["friendly_name"]
+            fallback["description"] = f"Fallback triggered due to Router HTTP {response.status_code} error."
+            return fallback
             
     except Exception as e:
         print(f"[!] Routing operation failed: {str(e)}. Using fallback framework.")
-        return STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"]
+        fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
+        fallback["name"] = fallback["friendly_name"]
+        fallback["description"] = f"Fallback triggered due to exception: {str(e)}"
+        return fallback

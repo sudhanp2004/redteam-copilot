@@ -1,6 +1,8 @@
 # Ignore local database and attack exports
 backend/attacks/*.json
 backend/attacks/*.db
+public_showcase/*/*.json
+public_showcase/*/*.png
 
 # Ignore Python cache files
 __pycache__/
@@ -9,3 +11,4 @@ __pycache__/
 
 # Ignore environment variables (Just in case!)
 .env
+.env.example

@@ -1,0 +1,5 @@
+This link tells us about the adjustable 
+https://ai.google.dev/gemini-api/docs/safety-settings
+
+non adjustable safety:
+https://ai.google.dev/gemini-api/docs/safety-guidance
