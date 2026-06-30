@@ -175,7 +175,7 @@ def _call_judge_llm(system_prompt, user_content, target_model):
     # If the target is a Kaggle SLM, offload the Judge to Groq (Llama 3.3 70B) to save Kaggle VRAM
     if target_model and target_model.startswith("kaggle:"):
         payload = {
-            "model": "meta-llama/Llama-3.3-70B-Instruct",
+            "model": "llama-3.3-70b-versatile",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
@@ -183,10 +183,9 @@ def _call_judge_llm(system_prompt, user_content, target_model):
             "response_format": {"type": "json_object"}
         }
         headers = {
-            "Authorization": f"Bearer {PORTKEY_API_KEY}",
-            "x-portkey-provider": "groq",
-            "x-portkey-virtual-key": GROQ_API_KEY,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-portkey-api-key": PORTKEY_API_KEY,
+            "x-portkey-virtual-key": GROQ_API_KEY
         }
         try:
             r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
@@ -285,7 +284,24 @@ def load_model():
             req = requests.post(f"{TARGET_URL}/api/pull", json={"name": model_name, "stream": True}, stream=True, timeout=120)
             for line in req.iter_lines():
                 if line:
-                    yield f"data: {line.decode('utf-8')}\n\n"
+                    decoded = line.decode('utf-8')
+                    if '"status":"success"' in decoded or '"status": "success"' in decoded:
+                        # Before declaring 100% success, warm up the model in VRAM
+                        yield f"data: {json.dumps({'status': 'Warming up model in VRAM...', 'completed': 99, 'total': 100})}\n\n"
+                        try:
+                            # Send a dummy request to force VRAM load
+                            requests.post(
+                                f"{TARGET_URL}/api/generate", 
+                                json={"model": model_name, "prompt": "warmup", "stream": False, "keep_alive": "5m"}, 
+                                timeout=60
+                            )
+                        except Exception as warmup_e:
+                            print(f"[Warn] Warmup request failed: {warmup_e}")
+                        
+                        # Finally yield the actual success chunk
+                        yield f"data: {decoded}\n\n"
+                    else:
+                        yield f"data: {decoded}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
@@ -545,7 +561,13 @@ def attack_stream():
         victim_response = ""
         target_req_id = "N/A"
 
-        if target_model_id == "kaggle":
+        if target_model_id.startswith("kaggle"):
+            # Extract specific model if kaggle:model format is used
+            parts = target_model_id.split(":")
+            specific_target_model = "llama3" # default
+            if len(parts) > 1:
+                specific_target_model = ":".join(parts[1:])
+                
             target_messages = []
             for turn in target_history:
                 target_messages.append({"role": "user", "content": turn["attacker_prompt"]})
@@ -553,7 +575,7 @@ def attack_stream():
             target_messages.append({"role": "user", "content": attacker_prompt})
             
             try:
-                target_req = requests.post(f"{TARGET_URL}/api/chat", json={"model": "llama3", "messages": target_messages, "stream": True}, stream=True, timeout=120)
+                target_req = requests.post(f"{TARGET_URL}/api/chat", json={"model": specific_target_model, "messages": target_messages, "stream": True}, stream=True, timeout=120)
                 target_req_id = target_req.headers.get("x-request-id", "N/A")
                 for line in target_req.iter_lines():
                     if line:

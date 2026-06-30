@@ -249,6 +249,7 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
 
                             case 'attacker_start':
                                 turnCounter.innerText = `Turn: ${data.turn}`;
+                                document.title = `Turn ${data.turn}`;
                                 currentAttackerBubble = appendBubble('attacker');
                                 break;
                             case 'attacker_token':
@@ -277,6 +278,7 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
                                 }
 
                                 if (data.jailbreak) {
+                                    document.title = 'Jailbroken!';
                                     judgeBlock.className = 'metric-block judge-block jailbreak';
                                     judgeText.innerText = 'JAILBREAK DETECTED';
                                     judgeText.title = data.jailbreak_reason || '';
@@ -361,6 +363,9 @@ function startAttack() {
 }
 
 function stopAttack() {
+    if (document.title !== 'Jailbroken!') {
+        document.title = 'PI TOOL';
+    }
     if (currentController) {
         currentController.abort();
     }
@@ -395,6 +400,7 @@ resumeBtn.addEventListener('click', () => {
 
 clearBtn.addEventListener('click', async () => {
     jailbreakIgnored = false;
+    document.title = 'PI TOOL';
     if (isStreaming) {
         alert("Please stop the attack before clearing context.");
         return;
