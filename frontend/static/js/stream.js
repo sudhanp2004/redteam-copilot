@@ -35,6 +35,81 @@ let currentTargetBubble = null;
 let activePhaseName = '';
 let jailbreakIgnored = false;
 
+// --- Target Handling ---
+async function handleTargetChange(targetValue) {
+    if (targetValue.startsWith('kaggle:')) {
+        const parts = targetValue.split(':');
+        const modelName = parts.slice(1).join(':'); // e.g., llama3:8b or phi
+        
+        // Disable UI
+        startBtn.disabled = true;
+        targetSelect.disabled = true;
+        
+        // Show progress bar
+        const container = document.getElementById('slm-progress-container');
+        const statusText = document.getElementById('slm-progress-status');
+        const percentText = document.getElementById('slm-progress-percent');
+        const progressBar = document.getElementById('slm-progress-bar');
+        
+        container.style.display = 'block';
+        statusText.innerText = `Downloading ${modelName}...`;
+        statusText.style.color = '#a0aec0';
+        progressBar.style.width = '0%';
+        percentText.innerText = '0%';
+
+        try {
+            const response = await fetch(`/api/load_model?model=${encodeURIComponent(modelName)}`);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            while (true) {
+                const {value, done} = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                
+                for (let line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.substring(6));
+                            if (data.error) {
+                                statusText.innerText = `Error: ${data.error}`;
+                                statusText.style.color = '#fc8181';
+                                break;
+                            }
+                            if (data.status) {
+                                statusText.innerText = data.status;
+                            }
+                            if (data.total && data.completed) {
+                                const percent = Math.round((data.completed / data.total) * 100);
+                                progressBar.style.width = `${percent}%`;
+                                percentText.innerText = `${percent}%`;
+                            }
+                            if (data.status === 'success') {
+                                statusText.innerText = `${modelName} loaded successfully!`;
+                                statusText.style.color = '#48bb78';
+                                progressBar.style.width = '100%';
+                                percentText.innerText = '100%';
+                                setTimeout(() => {
+                                    container.style.display = 'none';
+                                }, 3000);
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch (error) {
+            statusText.innerText = 'Failed to connect to Kaggle node.';
+            statusText.style.color = '#fc8181';
+        }
+        
+        // Re-enable UI
+        startBtn.disabled = false;
+        targetSelect.disabled = false;
+    }
+}
+
 // --- Smart Scroll Logic ---
 chatWindow.addEventListener('scroll', () => {
     const isAtBottom = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 50;

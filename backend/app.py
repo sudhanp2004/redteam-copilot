@@ -172,31 +172,60 @@ def calculate_metrics(attacker_text, victim_text):
     }
 
 def _call_judge_llm(system_prompt, user_content, target_model):
-    # Enforce Qwen 14B via local Tunnel for ALL evaluation (Stops Groq 8B Hallucinations)
-    payload = {
-        "model": "qwen2.5:14b",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        "options": {"temperature": 0.0},
-        "format": "json",
-        "stream": False
-    }
-    try:
-        # 90 second timeout for robust 14B generation on P100 GPU
-        r = requests.post(f"{TARGET_URL}/api/chat", json=payload, timeout=90)
-        if r.status_code == 200:
-            content = r.json()["message"]["content"].strip()
-            # Failsafe for markdown output
-            if content.startswith("```json"):
-                content = content.replace("```json", "").replace("```", "").strip()
-            return json.loads(content)
-        print(f"[Judge Error]: Target returned {r.status_code}")
-        return None
-    except Exception as e:
-        print(f"[Judge Error]: {str(e)}")
-        return None
+    # If the target is a Kaggle SLM, offload the Judge to Groq (Llama 3.3 70B) to save Kaggle VRAM
+    if target_model and target_model.startswith("kaggle:"):
+        payload = {
+            "model": "meta-llama/Llama-3.3-70B-Instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "response_format": {"type": "json_object"}
+        }
+        headers = {
+            "Authorization": f"Bearer {PORTKEY_API_KEY}",
+            "x-portkey-provider": "groq",
+            "x-portkey-virtual-key": GROQ_API_KEY,
+            "Content-Type": "application/json"
+        }
+        try:
+            r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
+            if r.status_code == 200:
+                content = r.json()["choices"][0]["message"]["content"].strip()
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
+                return json.loads(content)
+            print(f"[Judge Error]: Groq returned {r.status_code}")
+            return None
+        except Exception as e:
+            print(f"[Judge Error]: {str(e)}")
+            return None
+    else:
+        # Enforce Qwen 14B via local Tunnel for remote API evaluation (Stops Groq 8B Hallucinations)
+        payload = {
+            "model": "qwen2.5:14b",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "options": {"temperature": 0.0},
+            "format": "json",
+            "stream": False
+        }
+        try:
+            # 90 second timeout for robust 14B generation on P100 GPU
+            r = requests.post(f"{TARGET_URL}/api/chat", json=payload, timeout=90)
+            if r.status_code == 200:
+                content = r.json()["message"]["content"].strip()
+                # Failsafe for markdown output
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
+                return json.loads(content)
+            print(f"[Judge Error]: Target returned {r.status_code}")
+            return None
+        except Exception as e:
+            print(f"[Judge Error]: {str(e)}")
+            return None
 
 def evaluate_jailbreak_status(victim_response, objective, target_model):
     judge_text = victim_response[:2000] if len(victim_response) > 2000 else victim_response
@@ -241,6 +270,26 @@ def evaluate_jailbreak_status(victim_response, objective, target_model):
 @requires_auth
 def index():
     return render_template("index.html", target_connected=bool(NGROK_DOMAIN))
+
+@app.route("/api/load_model", methods=['GET'])
+@requires_auth
+def load_model():
+    model_name = request.args.get('model')
+    if not model_name:
+        return jsonify({"error": "No model specified"}), 400
+    if not TARGET_URL:
+        return jsonify({"error": "No Kaggle tunnel active"}), 503
+    
+    def generate():
+        try:
+            req = requests.post(f"{TARGET_URL}/api/pull", json={"name": model_name, "stream": True}, stream=True, timeout=120)
+            for line in req.iter_lines():
+                if line:
+                    yield f"data: {line.decode('utf-8')}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
 
 @app.route("/library")
 @requires_auth
