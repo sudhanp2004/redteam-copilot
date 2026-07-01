@@ -76,7 +76,7 @@ app = Flask(__name__,
 # API KEYS & CONFIGURATION
 # ==========================================
 SUPERVISOR_PASS = os.environ.get("SUPERVISOR_PASS")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY3")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
 FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
@@ -535,7 +535,7 @@ def attack_stream():
                                 attacker_prompt = cleaned_content
                         except Exception:
                             attacker_prompt = cleaned_content.replace('{"prompt":', '').replace('"}', '').strip()
-                        break 
+                        break
                     else:
                         yield f"data: {json.dumps({'error': f'Groq API Error {groq_req.status_code}'})}\n\n"
                         return

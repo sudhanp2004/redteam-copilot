@@ -4,7 +4,7 @@ import requests
 from dotenv import load_dotenv
 from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
 load_dotenv()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY3")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
 PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
 
 # Dictionary containing strategic framing configurations
