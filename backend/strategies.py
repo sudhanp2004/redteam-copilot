@@ -2,9 +2,9 @@ import os
 import json
 import requests
 from dotenv import load_dotenv
-from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
 load_dotenv()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
+import key_manager
+from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
 PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
 
 # Dictionary containing strategic framing configurations
@@ -46,7 +46,8 @@ def route_objective_to_strategy(objective, forced_strategy="auto"):
         return selected
 
     # --- 2. Fallback to LLM Router (Auto) ---
-    if not GROQ_API_KEY:
+    current_groq_key = key_manager.get_groq_key()
+    if not current_groq_key:
         print("[!] Missing GROQ_API_KEY. Defaulting to ACADEMIC_RESEARCH_FRAMING.")
         fallback = STRATEGY_REGISTRY["ACADEMIC_RESEARCH_FRAMING"].copy()
         fallback["name"] = fallback["friendly_name"]
@@ -56,7 +57,7 @@ def route_objective_to_strategy(objective, forced_strategy="auto"):
     headers = {
         "Content-Type": "application/json",
         "x-portkey-api-key": PORTKEY_API_KEY,
-        "x-portkey-virtual-key": GROQ_API_KEY
+        "x-portkey-virtual-key": current_groq_key
     }
 
     payload = {

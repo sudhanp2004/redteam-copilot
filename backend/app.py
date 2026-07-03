@@ -23,6 +23,9 @@ import strategies
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(os.path.dirname(BASE_DIR), ".env"))
 
+# MUST be imported after load_dotenv so it can read os.environ accurately during module init
+import key_manager
+
 # Setup directories for private attacks and public showcase
 OUT_DIR = os.path.join(BASE_DIR, "attacks")
 SHOWCASE_DIR = os.path.join(os.path.dirname(BASE_DIR), "public_showcase")
@@ -76,7 +79,6 @@ app = Flask(__name__,
 # API KEYS & CONFIGURATION
 # ==========================================
 SUPERVISOR_PASS = os.environ.get("SUPERVISOR_PASS")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY2")
 FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
@@ -173,7 +175,7 @@ def calculate_metrics(attacker_text, victim_text):
 
 def _call_judge_llm(system_prompt, user_content, target_model):
     # If the target is a Kaggle SLM, offload the Judge to Groq (Llama 3.3 70B) to save Kaggle VRAM
-    if target_model and target_model.startswith("kaggle:"):
+    if target_model and target_model.startswith("kaggle"):
         payload = {
             "model": "llama-3.3-70b-versatile",
             "messages": [
@@ -185,7 +187,7 @@ def _call_judge_llm(system_prompt, user_content, target_model):
         headers = {
             "Content-Type": "application/json",
             "x-portkey-api-key": PORTKEY_API_KEY,
-            "x-portkey-virtual-key": GROQ_API_KEY
+            "x-portkey-virtual-key": key_manager.get_groq_key()
         }
         try:
             r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
@@ -498,7 +500,7 @@ def attack_stream():
             headers = {
                 "Content-Type": "application/json",
                 "x-portkey-api-key": PORTKEY_API_KEY,
-                "x-portkey-virtual-key": GROQ_API_KEY
+                "x-portkey-virtual-key": key_manager.get_groq_key()
             }
             attacker_payload = {
                 "model": ATTACKER_MODEL,
@@ -507,22 +509,37 @@ def attack_stream():
                 "stream": False,
             }
             
-            max_retries = 5
+            max_retries = 15
             for attempt in range(max_retries):
                 try:
                     groq_req = requests.post("https://api.portkey.ai/v1/chat/completions", json=attacker_payload, headers=headers, timeout=15)
                     if groq_req.status_code == 429:
                         wait_time = int(groq_req.headers.get("Retry-After", 60))
-                        yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit. Pausing attack for {wait_time} seconds...'})}\n\n"
-                        time.sleep(wait_time)
-                        continue  
+                        error_details = groq_req.text
+                        used_key = headers.get("x-portkey-virtual-key", "UNKNOWN")
+                        if wait_time > 300:
+                            key_manager.rotate_groq_key()
+                            # Update headers for next loop iteration
+                            next_key = key_manager.get_groq_key()
+                            headers["x-portkey-virtual-key"] = next_key
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit with key [{used_key}]. Response: {error_details}. Switched to {next_key}.'})}\n\n"
+                            # Add a brief sleep so we don't spam the backup key in 0.01s if it's also rate limited
+                            time.sleep(1)
+                            continue
+                        else:
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit with key [{used_key}]. Pausing attack for {wait_time} seconds...'})}\n\n"
+                            time.sleep(wait_time)
+                            continue  
                     
                     if groq_req.status_code == 200:
                         response_data = groq_req.json()
                         raw_content = response_data["choices"][0]["message"]["content"]
-                        cleaned_content = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
-                        if "<think>" in cleaned_content:
-                            cleaned_content = cleaned_content.split("</think>")[-1].strip()
+                        # Robustly strip CoT blocks (even if unclosed due to max tokens)
+                        cleaned_content = re.sub(r"<think>.*?(?:</think>|$)", "", raw_content, flags=re.DOTALL).strip()
+                        
+                        if not cleaned_content:
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': 'Attacker hallucinated endless CoT without JSON. Retrying...'})}\n\n"
+                            continue
 
                         attacker_phase = "UNKNOWN"
                         try:
@@ -544,6 +561,10 @@ def attack_stream():
                         yield f"data: {json.dumps({'error': f'Attacker failure: {str(e)}'})}\n\n"
                         return
                     time.sleep(5) 
+            else:
+                # If we exhausted all max_retries without hitting 'break' (e.g. constant 429s)
+                yield f"data: {json.dumps({'error': 'Attacker failure: Max retries exceeded (API limits).'})}\n\n"
+                return
 
             yield f"data: {json.dumps({'status': 'phase_update', 'phase': attacker_phase})}\n\n"
             yield f"data: {json.dumps({'status': 'attacker_start', 'turn': CURRENT_TURN, 'is_baseline': False})}\n\n"
@@ -576,11 +597,19 @@ def attack_stream():
             
             try:
                 target_req = requests.post(f"{TARGET_URL}/api/chat", json={"model": specific_target_model, "messages": target_messages, "stream": True}, stream=True, timeout=120)
+                if target_req.status_code != 200:
+                    yield f"data: {json.dumps({'error': f'Kaggle Target HTTP Error {target_req.status_code}. Is your ngrok tunnel running Ollama?'})}\n\n"
+                    return
                 target_req_id = target_req.headers.get("x-request-id", "N/A")
                 for line in target_req.iter_lines():
                     if line:
                         try:
                             chunk = json.loads(line.decode("utf-8"))
+                            if "error" in chunk:
+                                error_msg = chunk["error"]
+                                yield f"data: {json.dumps({'error': f'Kaggle Target Error: {error_msg}'})}\n\n"
+                                return
+                            
                             token = chunk.get("message", {}).get("content", "")
                             victim_response += token
                             if token:
@@ -600,7 +629,7 @@ def attack_stream():
                 "openai": {"key": OPENAI_API_KEY},
                 "mistral": {"key": MISTRAL_API_KEY},
                 "deepseek": {"key": DEEPSEEK_API_KEY},
-                "meta": {"key": GROQ_API_KEY}
+                "meta": {"key": key_manager.get_groq_key()}
             }
             
             current_api = api_info.get(provider)
@@ -676,6 +705,40 @@ def attack_stream():
 
     return Response(execution_loop(), mimetype="text/event-stream")
 
+@app.route("/api/objectives", methods=["GET"])
+@requires_auth
+def get_objectives():
+    try:
+        file_path = os.path.join(os.path.dirname(BASE_DIR), "advbench_subset_50.txt")
+        with open(file_path, "r") as f:
+            objectives = [line.strip() for line in f if line.strip()]
+        return jsonify({"objectives": objectives})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/check_attack", methods=["GET"])
+@requires_auth
+def check_attack():
+    objective = request.args.get('objective', '')
+    target = request.args.get('target', '')
+    
+    if not objective or not target:
+        return jsonify({"exists": False})
+        
+    try:
+        # Scan through all saved JSON files in OUT_DIR
+        for filename in os.listdir(OUT_DIR):
+            if filename.endswith(".json"):
+                filepath = os.path.join(OUT_DIR, filename)
+                with open(filepath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if data.get("objective") == objective and data.get("target_model") == target:
+                        return jsonify({"exists": True})
+    except Exception:
+        pass
+        
+    return jsonify({"exists": False})
+
 @app.route("/api/session_metrics", methods=["GET"])
 @requires_auth
 def get_session_metrics():
@@ -725,7 +788,12 @@ def save_attack():
     session_info = database.get_session_info(CURRENT_SESSION_ID)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    filename = f"{CURRENT_SESSION_ID}.json"
+    is_auto = False
+    if request.is_json:
+        req_data = request.get_json(silent=True) or {}
+        is_auto = req_data.get("is_automated", False)
+    
+    filename = f"auto_{CURRENT_SESSION_ID}.json" if is_auto else f"{CURRENT_SESSION_ID}.json"
     filepath = os.path.join(OUT_DIR, filename)
     
     export_payload = {
@@ -735,6 +803,7 @@ def save_attack():
         "attacker_model": ATTACKER_MODEL,
         "target_model": CURRENT_TARGET_MODEL,
         "strategy_id": ACTIVE_STRATEGY["id"] if ACTIVE_STRATEGY else None,
+        "is_automated_benchmark": is_auto,
         "data_history": history
     }
     

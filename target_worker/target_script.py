@@ -23,8 +23,8 @@ subprocess.Popen(["ollama", "serve"])
 time.sleep(5)
 
 # 2. Pull the model weights
-print("[*] Fetching model weights (Llama3)...")
-os.system("ollama pull llama3")
+print("[*] Fetching target model weights...")
+os.system("ollama pull qwen2.5:14b")
 
 # 3. Install Ngrok via the stable official package manager
 print("[*] Setting up Ngrok network tunnel...")

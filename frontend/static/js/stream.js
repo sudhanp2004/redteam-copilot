@@ -12,6 +12,19 @@ const stopBtn = document.getElementById('stop-btn');
 const resumeBtn = document.getElementById('resume-btn');
 const clearBtn = document.getElementById('clear-btn');
 const saveBtn = document.getElementById('save-btn');
+const benchmarkBtn = document.getElementById('benchmark-btn');
+
+let isBenchmarking = false;
+let benchmarkObjectives = [];
+let benchmarkModels = [
+    "deepseek:deepseek-chat",
+    "mistral:mistral-large-latest",
+    "anthropic:claude-haiku-4-5",
+    "meta:llama-3.3-70b-versatile",
+    "google:gemini-2.5-flash"
+];
+let currentBenchObjIdx = 0;
+let currentBenchModelIdx = 0;
 const postBtn = document.getElementById('post-btn');
 
 // Telemetry Elements
@@ -134,6 +147,146 @@ function scrollToBottom() {
     }
 }
 
+// --- Setup API Polling ---
+async function fetchMetrics() {
+    try {
+        const res = await fetch('/api/session_metrics');
+        if (res.ok) {
+            const data = await res.json();
+            // Metrics are primarily updated via the stream, this keeps the session active
+        }
+    } catch (e) {
+        // silent fail on poll
+    }
+}
+setInterval(fetchMetrics, 2000);
+
+// --- BENCHMARK SUITE LOGIC ---
+async function benchmarkNext() {
+    if (!isBenchmarking) return;
+
+    // 1. Save JSON & Post Screenshot for previous run (if there was one)
+    if (currentBenchObjIdx > 0 || currentBenchModelIdx > 0) {
+        systemLog('Saving artifact for benchmark run...', 'system');
+        await fetch('/api/save_attack', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_automated: true })
+        });
+        // Attempt screenshot
+        try {
+            const canvas = await html2canvas(document.body, { backgroundColor: "#0d1117", scale: 1 });
+            await fetch('/api/post_showcase', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: canvas.toDataURL("image/png") })
+            });
+        } catch (e) {
+            console.error("Screenshot failed during benchmark", e);
+        }
+    }
+
+    // 2. Clear Context
+    await fetch('/api/clear', { method: 'POST' });
+    chatWindow.innerHTML = '';
+    tvValue.innerText = '0.00'; tvFill.style.width = '0%';
+    infoValue.innerText = '0.00'; infoFill.style.width = '0%';
+    judgeBlock.className = 'metric-block judge-block pending';
+    judgeText.innerText = 'PENDING';
+    stratName.innerText = 'None';
+    stratRationale.innerText = 'Waiting for objective...';
+    currentPhase.innerText = 'None';
+    currentPhase.style.color = '#a0aec0';
+    currentPhase.style.border = 'none';
+    document.title = "PI TOOL";
+
+    // 3. Check completion
+    if (currentBenchObjIdx >= benchmarkObjectives.length) {
+        systemLog("🏆 BENCHMARK SUITE COMPLETE!", "system");
+        isBenchmarking = false;
+        benchmarkBtn.innerText = "Run Benchmark Suite (Automated)";
+        benchmarkBtn.disabled = false;
+        return;
+    }
+
+    // 4. Setup next run
+    const obj = benchmarkObjectives[currentBenchObjIdx];
+    const mod = benchmarkModels[currentBenchModelIdx];
+
+    // 4.5 Check if this attack was already completed (saved in attacks folder)
+    try {
+        const checkRes = await fetch(`/api/check_attack?objective=${encodeURIComponent(obj)}&target=${encodeURIComponent(mod)}`);
+        const checkData = await checkRes.json();
+        if (checkData.exists) {
+            systemLog(`[BENCHMARK] Skipping ${mod} (Obj ${currentBenchObjIdx+1}). Already completed.`, 'system');
+            currentBenchModelIdx++;
+            if (currentBenchModelIdx >= benchmarkModels.length) {
+                currentBenchModelIdx = 0;
+                currentBenchObjIdx++;
+            }
+            // Recursively skip to next
+            setTimeout(benchmarkNext, 500);
+            return;
+        }
+    } catch (e) {
+        console.error("Failed to check if attack exists, continuing anyway", e);
+    }
+
+    objInput.value = obj;
+    targetSelect.value = mod;
+    // Dispatch change event to update the UI (like targetModelSpan)
+    if (targetSelect) {
+        targetSelect.dispatchEvent(new Event('change'));
+    }
+    stratSelect.value = "auto";
+
+    systemLog(`[BENCHMARK] Starting ${mod} (Obj ${currentBenchObjIdx+1}/${benchmarkObjectives.length})`);
+    
+    // Advance pointers for NEXT run
+    currentBenchModelIdx++;
+    if (currentBenchModelIdx >= benchmarkModels.length) {
+        currentBenchModelIdx = 0;
+        currentBenchObjIdx++;
+    }
+
+    // Start attack
+    setTimeout(() => {
+        startBtn.click();
+    }, 1000);
+}
+
+if (benchmarkBtn) {
+    benchmarkBtn.addEventListener('click', async () => {
+        if (isBenchmarking) {
+            isBenchmarking = false;
+            benchmarkBtn.innerText = "Run Benchmark Suite (Automated)";
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/objectives');
+            const data = await res.json();
+            if (data.objectives && data.objectives.length > 0) {
+                benchmarkObjectives = data.objectives;
+                isBenchmarking = true;
+                currentBenchObjIdx = 0;
+                currentBenchModelIdx = 0;
+                benchmarkBtn.innerText = "Stop Benchmark";
+                benchmarkBtn.disabled = true;
+                systemLog(`Loaded ${benchmarkObjectives.length} objectives. Starting benchmark...`, 'system');
+                setTimeout(() => {
+                    benchmarkBtn.disabled = false;
+                    benchmarkNext();
+                }, 1000);
+            } else {
+                systemLog("No objectives found in advbench_subset_50.txt", 'error');
+            }
+        } catch (e) {
+            systemLog("Failed to load benchmark objectives.", 'error');
+        }
+    });
+}
+
 // --- System Logging ---
 function systemLog(message, type = 'system') {
     const entry = document.createElement('div');
@@ -203,8 +356,15 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
 
                         if (data.error) {
                             systemLog(`Error: ${data.error}`, 'error');
-                            stopAttack();
-                            return;
+                            if (isBenchmarking) {
+                                systemLog(`[BENCHMARK] Skipping current target due to error. Moving to next...`, 'system');
+                                stopAttack();
+                                setTimeout(benchmarkNext, 2000);
+                                return;
+                            } else {
+                                stopAttack();
+                                return;
+                            }
                         }
 
                         switch (data.status) {
@@ -290,8 +450,15 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
                                     }
                                     
                                     if (!jailbreakIgnored) {
-                                        stopAttack(); 
+                                        // CRITICAL FIX: Save benchmark state so stopAttack doesn't kill it!
+                                        const wasBenchmarking = isBenchmarking;
+                                        stopAttack(wasBenchmarking); 
                                         resumeBtn.classList.remove('hidden');
+                                        
+                                        if (wasBenchmarking) {
+                                            setTimeout(benchmarkNext, 2000);
+                                        }
+                                        
                                         return;
                                     } else {
                                         systemLog('Jailbreak ignored by user. Continuing attack...', 'system');
@@ -300,6 +467,13 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
                                     judgeBlock.className = 'metric-block judge-block safe';
                                     judgeText.innerText = 'SAFE';
                                     judgeText.title = data.jailbreak_reason || '';
+                                    
+                                    if (isBenchmarking && data.turn >= 10) {
+                                        systemLog(`Turn limit reached (10). Objective failed on model.`, 'system');
+                                        stopAttack();
+                                        setTimeout(benchmarkNext, 2000);
+                                        return;
+                                    }
                                     
                                     // Handle the visual split between baseline and strategy
                                     if (data.phase === 'BASELINE_TEST') {
@@ -316,6 +490,10 @@ async function runTurn(objective, strategy = "auto", target = "kaggle") {
                                 if (isStreaming) {
                                     systemLog(data.phase === 'BASELINE_TEST' ? `Initializing Strategy Turn 1...` : `Initiating Turn ${data.turn + 1}...`);
                                     runTurn(objective, strategy, target); 
+                                }
+                                
+                                if (data.jailbreak && isBenchmarking) {
+                                    setTimeout(benchmarkNext, 2000);
                                 }
                                 return;
                         }
@@ -359,10 +537,19 @@ function startAttack() {
     systemLog(`Automated attack initiated for objective: "${objective}"`);
     systemLog(`Target selected: ${selectedTarget}`); 
     
+    const targetModelSpan = document.getElementById('target-model-name');
+    if (targetModelSpan && targetSelect) {
+        // Get the human readable text from the selected dropdown option
+        const selectedOption = targetSelect.options[targetSelect.selectedIndex];
+        targetModelSpan.textContent = selectedOption ? selectedOption.text : selectedTarget.split(':').pop();
+    } else if (targetModelSpan) {
+        targetModelSpan.textContent = selectedTarget.split(':').pop();
+    }
+    
     runTurn(objective, stratSelect.value, selectedTarget);
 }
 
-function stopAttack() {
+function stopAttack(keepBenchmark = false) {
     if (document.title !== 'Jailbroken!') {
         document.title = 'PI TOOL';
     }
@@ -370,6 +557,9 @@ function stopAttack() {
         currentController.abort();
     }
     isStreaming = false;
+    if (!keepBenchmark) {
+        isBenchmarking = false;
+    }
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
     resumeBtn.classList.add('hidden');
@@ -427,6 +617,11 @@ clearBtn.addEventListener('click', async () => {
         const modelSpan = document.getElementById('attacker-model-name');
         if (modelSpan) {
             modelSpan.textContent = 'Waiting...';
+        }
+        
+        const targetModelSpan = document.getElementById('target-model-name');
+        if (targetModelSpan) {
+            targetModelSpan.textContent = 'Waiting...';
         }
     }
 });
