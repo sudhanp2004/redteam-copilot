@@ -533,25 +533,24 @@ def attack_stream():
                     
                     if groq_req.status_code == 200:
                         response_data = groq_req.json()
-                        raw_content = response_data["choices"][0]["message"]["content"]
-                        # Robustly strip CoT blocks (even if unclosed due to max tokens)
-                        cleaned_content = re.sub(r"<think>.*?(?:</think>|$)", "", raw_content, flags=re.DOTALL).strip()
-                        
-                        if not cleaned_content:
-                            yield f"data: {json.dumps({'status': 'routing', 'msg': 'Attacker hallucinated endless CoT without JSON. Retrying...'})}\n\n"
-                            continue
-
                         attacker_phase = "UNKNOWN"
-                        try:
-                            json_match = re.search(r'\{.*?\}', cleaned_content, flags=re.DOTALL)
-                            if json_match:
+                        
+                        # Just look for the correct JSON anywhere in the raw response
+                        json_match = re.search(r'\{.*?\}', raw_content, flags=re.DOTALL)
+                        
+                        if json_match:
+                            try:
                                 parsed_json = json.loads(json_match.group(0))
                                 attacker_prompt = parsed_json.get("prompt", "").strip()
                                 attacker_phase = parsed_json.get("phase", "UNKNOWN").strip().upper()
-                            else:
-                                attacker_prompt = cleaned_content
-                        except Exception:
-                            attacker_prompt = cleaned_content.replace('{"prompt":', '').replace('"}', '').strip()
+                            except Exception:
+                                # Fallback if JSON is malformed
+                                attacker_prompt = json_match.group(0).replace('{"prompt":', '').replace('"}', '').strip()
+                        else:
+                            # If absolutely no JSON brackets were found anywhere in the response,
+                            # the model failed to output the payload. Retry.
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': 'Attacker hallucinated CoT without any JSON payload. Retrying...'})}\n\n"
+                            continue
                         break
                     else:
                         yield f"data: {json.dumps({'error': f'Groq API Error {groq_req.status_code}'})}\n\n"
