@@ -108,6 +108,21 @@
                     <h4>Judge Verdict</h4>
                     <span id="judge-status-text">SAFE</span>
                 </div>
+                
+                <div class="metric-block" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px;">
+                    <span style="font-size: 0.85em; font-weight: bold; color: #e2e8f0;">Human Flag</span>
+                    <label class="switch" style="position: relative; display: inline-block; width: 40px; height: 20px;">
+                        <input type="checkbox" id="human-flag-toggle" style="opacity: 0; width: 0; height: 0;">
+                        <span class="slider round" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4a5568; transition: .4s; border-radius: 20px;"></span>
+                    </label>
+                </div>
+                <style>
+                    /* Switch Styles */
+                    .switch input:checked + .slider { background-color: #f56565; }
+                    .switch input:focus + .slider { box-shadow: 0 0 1px #f56565; }
+                    .switch .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+                    .switch input:checked + .slider:before { transform: translateX(20px); }
+                </style>
 
                 <div class="metric-block strategy-block">
                     <h4>Active Strategy</h4>

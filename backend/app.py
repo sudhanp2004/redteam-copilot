@@ -237,25 +237,49 @@ def _call_jbb_judge_llm(user_content):
         "temperature": 0.0,
         "max_tokens": 100
     }
-    headers = {
-        "Content-Type": "application/json",
-        "x-portkey-api-key": PORTKEY_API_KEY,
-        "x-portkey-virtual-key": key_manager.get_jbb_groq_key()
-    }
-    try:
-        r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
-        trace_id = r.headers.get("x-portkey-trace-id") or r.headers.get("x-request-id") or "N/A"
-        if r.status_code == 200:
-            content = r.json()["choices"][0]["message"]["content"].strip().lower()
-            return "unsafe" in content, trace_id
-        print(f"[JBB Judge Error]: Groq returned {r.status_code} - {r.text}")
-        return False, trace_id
-    except Exception as e:
-        print(f"[JBB Judge Error]: {str(e)}")
-        return False, "N/A"
+    
+    max_retries = 10
+    for attempt in range(max_retries):
+        headers = {
+            "Content-Type": "application/json",
+            "x-portkey-api-key": PORTKEY_API_KEY,
+            "x-portkey-virtual-key": key_manager.get_jbb_groq_key()
+        }
+        try:
+            r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
+            trace_id = r.headers.get("x-portkey-trace-id") or r.headers.get("x-request-id") or "N/A"
+            if r.status_code == 200:
+                content = r.json()["choices"][0]["message"]["content"].strip().lower()
+                return "unsafe" in content, trace_id
+            
+            if r.status_code == 429:
+                err_msg = r.text.lower()
+                # Check if it's the daily limit
+                if "tokens per day" in err_msg or "tpd" in err_msg:
+                    print(f"[JBB Judge] TPD Limit Hit on JBB Key. Rotating...")
+                    key_manager.rotate_jbb_groq_key()
+                    continue
+                else:
+                    # RPM or TPM wait
+                    wait_str = r.headers.get("retry-after", "5")
+                    try:
+                        wait_time = float(wait_str.replace('s', ''))
+                    except ValueError:
+                        wait_time = 5.0
+                    print(f"[JBB Judge] 429 TPM/RPM. Waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+            
+            print(f"[JBB Judge Error]: API returned {r.status_code}. Retrying...")
+            time.sleep(2)
+        except Exception as e:
+            print(f"[JBB Judge Error]: {str(e)}. Retrying...")
+            time.sleep(2)
+            
+    raise Exception("JBB Judge failure: Max retries exceeded (API limits). Both Key 5 and Key 6 are exhausted.")
 
 def evaluate_jailbreak_status(victim_response, objective, target_model):
-    judge_text = victim_response[:2000] if len(victim_response) > 2000 else victim_response
+    judge_text = victim_response
     lower_resp = victim_response.lower().strip()
     
     # Expanded to catch both standard refusals and factual debunking
@@ -590,13 +614,13 @@ def attack_stream():
                         wait_time = int(groq_req.headers.get("Retry-After", 60))
                         error_details = groq_req.text
                         used_key = headers.get("x-portkey-virtual-key", "UNKNOWN")
-                        if wait_time > 300:
+                        if wait_time > 300 or "tokens per day (tpd)" in error_details.lower():
                             key_manager.rotate_groq_key()
                             # Update headers for next loop iteration
                             next_key = key_manager.get_groq_key()
                             headers["x-portkey-virtual-key"] = next_key
-                            print(f"[Groq 429] Wait time {wait_time} > 300s. Switched key. Error: {error_details}")
-                            yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit with key [{used_key}]. Response: {error_details}. Switched to {next_key}.'})}\n\n"
+                            print(f"[Groq 429] Wait time {wait_time}s or TPD hit. Switched key. Error: {error_details}")
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq limit hit with key [{used_key}]. Response: {error_details}. Switched to {next_key}.'})}\n\n"
                             # Add a brief sleep so we don't spam the backup key in 0.01s if it's also rate limited
                             time.sleep(1)
                             continue
@@ -765,7 +789,17 @@ def attack_stream():
         yield f"data: {json.dumps({'status': 'scoring'})}\n\n"
         
         metrics = calculate_metrics(attacker_prompt, victim_response)
-        jbb_jailbreak_flag, jbb_trace_id, bucket_jailbreak_flag, jailbreak_reason, harm_bucket = evaluate_jailbreak_status(victim_response, objective, target_model_id)
+        
+        try:
+            jbb_jailbreak_flag, jbb_trace_id, bucket_jailbreak_flag, jailbreak_reason, harm_bucket = evaluate_jailbreak_status(victim_response, objective, target_model_id)
+        except Exception as e:
+            if "JBB Judge failure" in str(e):
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                return
+            else:
+                yield f"data: {json.dumps({'error': f'Judge error: {str(e)}'})}\n\n"
+                return
+        
         
         # JBB flag overrides for the main "jailbreak" stop condition
         database.log_turn(CURRENT_SESSION_ID, CURRENT_TURN, attacker_prompt, 
@@ -877,10 +911,6 @@ def save_attack():
     if not CURRENT_SESSION_ID:
         return jsonify({"status": "error", "message": "No active session to export"}), 400
         
-    history = database.get_session_history(CURRENT_SESSION_ID)
-    session_info = database.get_session_info(CURRENT_SESSION_ID)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
     is_auto = False
     is_asr = False
     if request.is_json:
@@ -888,6 +918,16 @@ def save_attack():
         is_auto = req_data.get("is_automated", False)
         # If the attack was automated via benchmark UI, we consider it an ASR run
         is_asr = req_data.get("is_asr", is_auto)
+        human_flagged = req_data.get("human_flagged", False)
+        
+        # Persist the human flag to the database so it survives subsequent saves
+        if human_flagged and CURRENT_SESSION_ID:
+            database.set_human_flag(CURRENT_SESSION_ID)
+
+    # Fetch history AFTER potentially setting the human flag
+    history = database.get_session_history(CURRENT_SESSION_ID)
+    session_info = database.get_session_info(CURRENT_SESSION_ID)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     filename = f"auto_{CURRENT_SESSION_ID}.json" if is_auto else f"{CURRENT_SESSION_ID}.json"
     if is_asr:
@@ -914,15 +954,6 @@ def save_attack():
         with open(asr_path, "w", encoding="utf-8") as f:
             json.dump(export_payload, f, indent=4)
             
-        # Also auto-publish to public showcase
-        target_model_raw = CURRENT_TARGET_MODEL or "unknown_target"
-        target_sanitized = target_model_raw.replace(":", "-").replace("/", "-")
-        showcase_target_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public_showcase", target_sanitized)
-        os.makedirs(showcase_target_dir, exist_ok=True)
-        showcase_path = os.path.join(showcase_target_dir, filename)
-        with open(showcase_path, "w", encoding="utf-8") as f:
-            json.dump(export_payload, f, indent=4)
-        
     else:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(export_payload, f, indent=4)
