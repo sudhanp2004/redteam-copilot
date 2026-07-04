@@ -9,6 +9,8 @@ GROQ_KEYS = [
 # Filter out empty keys
 GROQ_KEYS = [k for k in GROQ_KEYS if k]
 
+JBB_GROQ_KEY = os.environ.get("GROQ_API_KEY4")
+
 current_key_idx = 0
 
 def get_groq_key():
@@ -22,3 +24,7 @@ def rotate_groq_key():
         time.sleep(1)
         current_key_idx = (current_key_idx + 1) % len(GROQ_KEYS)
         print(f"[KeyManager] Rotated Groq API Key to index {current_key_idx}")
+
+def get_jbb_groq_key():
+    return JBB_GROQ_KEY
+

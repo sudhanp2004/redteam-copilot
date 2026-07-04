@@ -67,6 +67,7 @@ def route_objective_to_strategy(objective, forced_strategy="auto"):
             {"role": "user", "content": f"Objective to analyze: {objective}"}
         ],
         "temperature": 0.1,
+        "max_tokens": 300,
         "response_format": {"type": "json_object"}
     }
 

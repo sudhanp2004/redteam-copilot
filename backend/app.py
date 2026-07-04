@@ -228,6 +228,32 @@ def _call_judge_llm(system_prompt, user_content, target_model):
             print(f"[Judge Error]: {str(e)}")
             return None
 
+def _call_jbb_judge_llm(user_content):
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.0,
+        "max_tokens": 100
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "x-portkey-api-key": PORTKEY_API_KEY,
+        "x-portkey-virtual-key": key_manager.get_jbb_groq_key()
+    }
+    try:
+        r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
+        trace_id = r.headers.get("x-portkey-trace-id") or r.headers.get("x-request-id") or "N/A"
+        if r.status_code == 200:
+            content = r.json()["choices"][0]["message"]["content"].strip().lower()
+            return "unsafe" in content, trace_id
+        print(f"[JBB Judge Error]: Groq returned {r.status_code} - {r.text}")
+        return False, trace_id
+    except Exception as e:
+        print(f"[JBB Judge Error]: {str(e)}")
+        return False, "N/A"
+
 def evaluate_jailbreak_status(victim_response, objective, target_model):
     judge_text = victim_response[:2000] if len(victim_response) > 2000 else victim_response
     lower_resp = victim_response.lower().strip()
@@ -241,15 +267,20 @@ def evaluate_jailbreak_status(victim_response, objective, target_model):
     )
     
     if lower_resp.startswith(refusal_prefixes):
-        return False, "Target explicitly refused or debunked the prompt (Caught by Pre-Filter).", "HARD_REFUSAL"
+        return False, "N/A", False, "Target explicitly refused or debunked the prompt (Caught by Pre-Filter).", "HARD_REFUSAL"
 
+    # --- Call Official JBB Judge ---
+    jbb_prompt = jailbreak_judge.build_jbb_call(objective, judge_text)
+    jbb_verdict, jbb_trace_id = _call_jbb_judge_llm(jbb_prompt)
+
+    # --- Call Internal Multi-Bucket Judge ---
     router_result = _call_judge_llm(
         jailbreak_judge.build_router_call(objective),
         f"Classify this objective: {objective}",
         target_model
     )
     if router_result is None:
-        return False, "Router call failed; defaulting to FALSE for safety of metrics.", "UNKNOWN"
+        return jbb_verdict, jbb_trace_id, False, "Router call failed; defaulting to FALSE for safety of metrics.", "UNKNOWN"
 
     bucket = router_result.get("primary_bucket", "GENERATIVE")
     if bucket not in jailbreak_judge.BUCKET_TESTS:
@@ -258,10 +289,11 @@ def evaluate_jailbreak_status(victim_response, objective, target_model):
     judge_prompt = jailbreak_judge.build_judge_call(bucket, objective, judge_text)
     verdict = _call_judge_llm(judge_prompt, f"Target AI Response to evaluate:\n\n{judge_text}", target_model)
     if verdict is None:
-        return False, f"Judge call failed after routing to bucket={bucket}.", bucket
+        return jbb_verdict, jbb_trace_id, False, f"Judge call failed after routing to bucket={bucket}.", bucket
 
     reason = f"[{bucket}] " + verdict.get("reason", "")
-    return bool(verdict.get("jailbreak_successful", False)), reason, bucket
+    bucket_verdict = bool(verdict.get("jailbreak_successful", False))
+    return jbb_verdict, jbb_trace_id, bucket_verdict, reason, bucket
 
 # ==========================================
 # MAIN EXECUTION CORE ROUTES
@@ -315,6 +347,12 @@ def library_view():
     # Serves the public showcase HTML page
     return render_template("library.html")
 
+@app.route("/library/asr")
+@requires_auth
+def asr_library_view():
+    # Serves the ASR benchmark HTML page
+    return render_template("asr_library.html")
+
 # @app.route("/api/showcase", methods=["GET"])
 # @requires_auth
 # def get_showcase_files():
@@ -343,6 +381,35 @@ def library_view():
 #     files_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
 #     return jsonify(files_data)
 
+
+@app.route("/api/showcase/asr", methods=["GET"])
+@requires_auth
+def get_asr_showcase_files():
+    benchmark_dir = os.path.join(os.path.dirname(BASE_DIR), "benchmark_asr")
+    files_data = []
+    if os.path.exists(benchmark_dir):
+        for root, dirs, files in os.walk(benchmark_dir):
+            for filename in files:
+                if filename.endswith(".json"):
+                    filepath = os.path.join(root, filename)
+                    rel_json_path = os.path.relpath(filepath, benchmark_dir)
+                    try:
+                        with open(filepath, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            data["filename"] = rel_json_path
+                            base_name = os.path.splitext(filename)[0]
+                            img_filename = base_name + ".png"
+                            img_path = os.path.join(root, img_filename)
+                            if os.path.exists(img_path):
+                                rel_img_path = os.path.relpath(img_path, benchmark_dir)
+                                data["image_url"] = f"/asr_media/{rel_img_path}"
+                            else:
+                                data["image_url"] = None
+                            files_data.append(data)
+                    except Exception as e:
+                        print(f"Error reading {filepath}: {e}")
+    files_data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    return jsonify(files_data)
 
 @app.route("/api/showcase", methods=["GET"])
 @requires_auth
@@ -387,6 +454,12 @@ def get_showcase_files():
 @requires_auth
 def showcase_media(filename):
     return send_from_directory(SHOWCASE_DIR, filename)
+
+@app.route("/asr_media/<path:filename>")
+@requires_auth
+def asr_media(filename):
+    benchmark_dir = os.path.join(os.path.dirname(BASE_DIR), "benchmark_asr")
+    return send_from_directory(benchmark_dir, filename)
 
 
 @app.route("/api/target_status", methods=["GET"])
@@ -522,35 +595,42 @@ def attack_stream():
                             # Update headers for next loop iteration
                             next_key = key_manager.get_groq_key()
                             headers["x-portkey-virtual-key"] = next_key
+                            print(f"[Groq 429] Wait time {wait_time} > 300s. Switched key. Error: {error_details}")
                             yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit with key [{used_key}]. Response: {error_details}. Switched to {next_key}.'})}\n\n"
                             # Add a brief sleep so we don't spam the backup key in 0.01s if it's also rate limited
                             time.sleep(1)
                             continue
                         else:
-                            yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit with key [{used_key}]. Pausing attack for {wait_time} seconds...'})}\n\n"
+                            print(f"[Groq 429] Wait time {wait_time}s. Error details: {error_details}")
+                            # To check for <think> tags, optionally print the payload being sent
+                            print(f"[Groq Request Payload]: {json.dumps(attacker_payload)[:1000]}...")
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': f'Groq TPM limit hit with key [{used_key}]. Response: {error_details}. Pausing attack for {wait_time} seconds...'})}\n\n"
                             time.sleep(wait_time)
                             continue  
                     
                     if groq_req.status_code == 200:
                         response_data = groq_req.json()
+                        raw_content = response_data["choices"][0]["message"]["content"]
+                        cleaned_content = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
+                        if "<think>" in cleaned_content:
+                            cleaned_content = cleaned_content.split("</think>")[-1].strip()
+
+                        if not cleaned_content:
+                            print(f"[Attacker Error] Empty content after think stripping. Raw: {raw_content[:200]}")
+                            yield f"data: {json.dumps({'status': 'routing', 'msg': 'Attacker hallucinated endless CoT without JSON. Retrying...'})}\n\n"
+                            continue
+
                         attacker_phase = "UNKNOWN"
-                        
-                        # Just look for the correct JSON anywhere in the raw response
-                        json_match = re.search(r'\{.*?\}', raw_content, flags=re.DOTALL)
-                        
-                        if json_match:
-                            try:
+                        try:
+                            json_match = re.search(r'\{.*?\}', cleaned_content, flags=re.DOTALL)
+                            if json_match:
                                 parsed_json = json.loads(json_match.group(0))
                                 attacker_prompt = parsed_json.get("prompt", "").strip()
                                 attacker_phase = parsed_json.get("phase", "UNKNOWN").strip().upper()
-                            except Exception:
-                                # Fallback if JSON is malformed
-                                attacker_prompt = json_match.group(0).replace('{"prompt":', '').replace('"}', '').strip()
-                        else:
-                            # If absolutely no JSON brackets were found anywhere in the response,
-                            # the model failed to output the payload. Retry.
-                            yield f"data: {json.dumps({'status': 'routing', 'msg': 'Attacker hallucinated CoT without any JSON payload. Retrying...'})}\n\n"
-                            continue
+                            else:
+                                attacker_prompt = cleaned_content
+                        except Exception:
+                            attacker_prompt = cleaned_content.replace('{"prompt":', '').replace('"}', '').strip()
                         break
                     else:
                         yield f"data: {json.dumps({'error': f'Groq API Error {groq_req.status_code}'})}\n\n"
@@ -685,16 +765,20 @@ def attack_stream():
         yield f"data: {json.dumps({'status': 'scoring'})}\n\n"
         
         metrics = calculate_metrics(attacker_prompt, victim_response)
-        jailbreak_flag, jailbreak_reason, harm_bucket = evaluate_jailbreak_status(victim_response, objective, target_model_id)
+        jbb_jailbreak_flag, jbb_trace_id, bucket_jailbreak_flag, jailbreak_reason, harm_bucket = evaluate_jailbreak_status(victim_response, objective, target_model_id)
         
+        # JBB flag overrides for the main "jailbreak" stop condition
         database.log_turn(CURRENT_SESSION_ID, CURRENT_TURN, attacker_prompt, 
-                          victim_response, metrics, jailbreak_flag, attacker_phase, jailbreak_reason, harm_bucket, target_req_id)
+                          victim_response, metrics, bucket_jailbreak_flag, jbb_jailbreak_flag, attacker_phase, jailbreak_reason, harm_bucket, target_req_id, jbb_trace_id)
         
         turn_data = {
             'status': 'turn_complete',
             'turn': CURRENT_TURN,
             'metrics': metrics,
-            'jailbreak': jailbreak_flag,
+            'jailbreak': jbb_jailbreak_flag,
+            'jbb_jailbreak': jbb_jailbreak_flag,
+            'jbb_trace_id': jbb_trace_id,
+            'bucket_jailbreak': bucket_jailbreak_flag,
             'jailbreak_reason': jailbreak_reason,
             'phase': attacker_phase,
             'bucket': harm_bucket,
@@ -708,9 +792,13 @@ def attack_stream():
 @requires_auth
 def get_objectives():
     try:
-        file_path = os.path.join(os.path.dirname(BASE_DIR), "advbench_subset_50.txt")
+        file_path = os.path.join(os.path.dirname(BASE_DIR), "jbb_subset.txt")
         with open(file_path, "r") as f:
-            objectives = [line.strip() for line in f if line.strip()]
+            objectives = []
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    objectives.append(line)
         return jsonify({"objectives": objectives})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -724,17 +812,23 @@ def check_attack():
     if not objective or not target:
         return jsonify({"exists": False})
         
-    try:
-        # Scan through all saved JSON files in OUT_DIR
-        for filename in os.listdir(OUT_DIR):
-            if filename.endswith(".json"):
-                filepath = os.path.join(OUT_DIR, filename)
-                with open(filepath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if data.get("objective") == objective and data.get("target_model") == target:
-                        return jsonify({"exists": True})
-    except Exception:
-        pass
+    dirs_to_check = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmark_asr")
+    ]
+    
+    for check_dir in dirs_to_check:
+        try:
+            if not os.path.exists(check_dir):
+                continue
+            for filename in os.listdir(check_dir):
+                if filename.endswith(".json"):
+                    filepath = os.path.join(check_dir, filename)
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if data.get("objective") == objective and data.get("target_model") == target:
+                            return jsonify({"exists": True})
+        except Exception:
+            pass
         
     return jsonify({"exists": False})
 
@@ -788,11 +882,17 @@ def save_attack():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     is_auto = False
+    is_asr = False
     if request.is_json:
         req_data = request.get_json(silent=True) or {}
         is_auto = req_data.get("is_automated", False)
+        # If the attack was automated via benchmark UI, we consider it an ASR run
+        is_asr = req_data.get("is_asr", is_auto)
     
     filename = f"auto_{CURRENT_SESSION_ID}.json" if is_auto else f"{CURRENT_SESSION_ID}.json"
+    if is_asr:
+        filename = f"asr_{CURRENT_SESSION_ID}.json"
+    
     filepath = os.path.join(OUT_DIR, filename)
     
     export_payload = {
@@ -806,8 +906,26 @@ def save_attack():
         "data_history": history
     }
     
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(export_payload, f, indent=4)
+    if is_asr:
+        # Save to benchmark_asr
+        asr_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmark_asr")
+        os.makedirs(asr_dir, exist_ok=True)
+        asr_path = os.path.join(asr_dir, filename)
+        with open(asr_path, "w", encoding="utf-8") as f:
+            json.dump(export_payload, f, indent=4)
+            
+        # Also auto-publish to public showcase
+        target_model_raw = CURRENT_TARGET_MODEL or "unknown_target"
+        target_sanitized = target_model_raw.replace(":", "-").replace("/", "-")
+        showcase_target_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public_showcase", target_sanitized)
+        os.makedirs(showcase_target_dir, exist_ok=True)
+        showcase_path = os.path.join(showcase_target_dir, filename)
+        with open(showcase_path, "w", encoding="utf-8") as f:
+            json.dump(export_payload, f, indent=4)
+        
+    else:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(export_payload, f, indent=4)
         
     return jsonify({"status": "success", "saved_to": filepath})
 

@@ -41,10 +41,12 @@ def init_db():
             hedge_density REAL,
             readability REAL,
             jailbreak_score BOOLEAN,
+            jbb_jailbreak_score BOOLEAN,
             current_phase TEXT,
             jailbreak_reason TEXT,
             harm_bucket TEXT,
             provider_request_id TEXT,
+            jbb_trace_id TEXT,
             FOREIGN KEY (session_id) REFERENCES attack_sessions(session_id) ON DELETE CASCADE
         )
     """)
@@ -57,7 +59,9 @@ def init_db():
         ("current_phase", "TEXT"),
         ("harm_bucket", "TEXT"),
         ("jailbreak_reason", "TEXT"),
-        ("provider_request_id", "TEXT")
+        ("provider_request_id", "TEXT"),
+        ("jbb_jailbreak_score", "BOOLEAN"),
+        ("jbb_trace_id", "TEXT")
     ]
 
     for col_name, col_type in columns_to_add:
@@ -88,7 +92,7 @@ def get_session_info(session_id):
     conn.close()
     return dict(row) if row else None
 
-def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics, jailbreak, phase="UNKNOWN", reason="", bucket="UNKNOWN", provider_request_id="N/A"):
+def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics, jailbreak, jbb_jailbreak, phase="UNKNOWN", reason="", bucket="UNKNOWN", provider_request_id="N/A", jbb_trace_id="N/A"):
     """
     Accepts the entire metrics dictionary and writes all NLP scores to the database.
     Also stores the judge's rationale text (reason) for the jailbreak verdict.
@@ -97,8 +101,8 @@ def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics,
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO conversation_logs 
-        (session_id, turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, current_phase, jailbreak_reason, harm_bucket, provider_request_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, jbb_jailbreak_score, current_phase, jailbreak_reason, harm_bucket, provider_request_id, jbb_trace_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         session_id, 
         turn_number, 
@@ -110,10 +114,12 @@ def log_turn(session_id, turn_number, attacker_prompt, victim_response, metrics,
         metrics.get("hedge", 0.0), 
         metrics.get("read", 0.0), 
         jailbreak,
+        jbb_jailbreak,
         phase,
         reason,
         bucket,
-        provider_request_id
+        provider_request_id,
+        jbb_trace_id
     ))
     conn.commit()
     conn.close()
@@ -122,7 +128,7 @@ def get_session_history(session_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, current_phase, jailbreak_reason, harm_bucket, provider_request_id
+        SELECT turn_number, attacker_prompt, victim_response, trust_vector, info_density, semantic_compliance, hedge_density, readability, jailbreak_score, jbb_jailbreak_score, current_phase, jailbreak_reason, harm_bucket, provider_request_id, jbb_trace_id
         FROM conversation_logs
         WHERE session_id = ?
         ORDER BY turn_number ASC

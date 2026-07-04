@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Threat Intel Library</title>
+    <title>ASR Benchmark Viewer - RedTeam Copilot</title>
     <style>
         :root {
             --bg-main: #0d1117;
@@ -247,10 +247,10 @@
     <div class="sidebar">
         <div class="sidebar-header">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <h2>Threat Intel Library</h2>
+                <h2>ASR Benchmark Results</h2>
                 <a href="/" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">← Back to Arena</a>
             </div>
-            <p style="margin-bottom: 15px;">Curated Security Showcase Logs</p>
+            <p style="margin-bottom: 15px;">A collection of benchmark runs against target models.</p>
             <div id="statsCounter" style="margin-bottom: 15px; font-size: 0.85rem; color: var(--accent-blue); font-weight: 600;">Loading stats...</div>
             
             <input type="text" id="searchInput" placeholder="Search objectives..." style="width: 100%; padding: 8px; margin-bottom: 10px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-size: 0.85rem;">
@@ -305,9 +305,9 @@
 
         async function loadLibrary() {
             try {
-                const response = await fetch('/api/showcase');
-                if (!response.ok) throw new Error('Failed to reach network endpoint assets.');
-                showcaseData = await response.json();
+                const res = await fetch('/api/showcase/asr');
+                if (!res.ok) throw new Error('Failed to reach network endpoint assets.');
+                showcaseData = await res.json();
                 populateFilters();
                 applyFilters();
                 
@@ -355,7 +355,7 @@
             const strategyVal = document.getElementById('strategyFilter').value;
             
             filteredData = showcaseData.filter(session => {
-                const isCompromised = session.data_history && session.data_history.some(turn => turn.jailbreak_score === 1);
+                const isCompromised = session.data_history && session.data_history.some(turn => turn.jbb_jailbreak_score === 1);
                 
                 const objectiveStr = session.objective || "";
                 const matchSearch = objectiveStr.toLowerCase().includes(searchTerm);
@@ -392,7 +392,7 @@
                 card.onclick = () => displayCase(session, card);
 
                 // Analyze if the target collapsed at any turn
-                const isCompromised = session.data_history && session.data_history.some(turn => turn.jailbreak_score === 1);
+                const isCompromised = session.data_history && session.data_history.some(turn => turn.jbb_jailbreak_score === 1);
                 const statusBadge = isCompromised 
                     ? `<span class="badge badge-compromised">Compromised</span>`
                     : `<span class="badge badge-safe">Safe Matrix</span>`;
@@ -482,9 +482,9 @@
                     const targetBlock = document.createElement('div');
                     targetBlock.className = 'message-block target';
                     
-                    const judgeBadge = turn.jailbreak_score === 1
-                        ? `<span class="badge badge-compromised" style="margin-left: 8px;">Jailbreak Triggered</span>`
-                        : `<span class="badge badge-safe" style="margin-left: 8px;">Secured Matrix</span>`;
+                    const judgeBadge = turn.jbb_jailbreak_score === 1
+                        ? `<span class="badge badge-compromised" style="margin-left: 8px;">Jailbreak Triggered (JBB)</span>`
+                        : `<span class="badge badge-safe" style="margin-left: 8px;">Secured Matrix (JBB)</span>`;
 
                     targetBlock.innerHTML = `
                         <div class="bubble-header">
