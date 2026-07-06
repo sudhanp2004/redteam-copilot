@@ -16,6 +16,7 @@ const benchmarkBtn = document.getElementById('benchmark-btn');
 
 let isBenchmarking = false;
 let benchmarkObjectives = [];
+let completedBenchmarkMap = {};
 let benchmarkModels = [
     "deepseek:deepseek-chat",
     "mistral:mistral-large-latest",
@@ -209,28 +210,39 @@ async function benchmarkNext() {
         return;
     }
 
-    // 4. Setup next run
-    const obj = benchmarkObjectives[currentBenchObjIdx];
-    const mod = benchmarkModels[currentBenchModelIdx];
+    // 4. Setup next run & fast-forward completed runs
+    let foundGap = false;
+    while (currentBenchObjIdx < benchmarkObjectives.length) {
+        const obj = benchmarkObjectives[currentBenchObjIdx];
+        const mod = benchmarkModels[currentBenchModelIdx];
 
-    // 4.5 Check if this attack was already completed (saved in attacks folder)
-    try {
-        const checkRes = await fetch(`/api/check_attack?objective=${encodeURIComponent(obj)}&target=${encodeURIComponent(mod)}`);
-        const checkData = await checkRes.json();
-        if (checkData.exists) {
-            systemLog(`[BENCHMARK] Skipping ${mod} (Obj ${currentBenchObjIdx+1}). Already completed.`, 'system');
+        if (completedBenchmarkMap[obj] && completedBenchmarkMap[obj].includes(mod)) {
+            // Already completed, skip instantly in memory
             currentBenchModelIdx++;
             if (currentBenchModelIdx >= benchmarkModels.length) {
                 currentBenchModelIdx = 0;
                 currentBenchObjIdx++;
             }
-            // Recursively skip to next
-            setTimeout(benchmarkNext, 500);
-            return;
+        } else {
+            // Found a gap!
+            foundGap = true;
+            break;
         }
-    } catch (e) {
-        console.error("Failed to check if attack exists, continuing anyway", e);
     }
+
+    if (!foundGap) {
+        // We fast-forwarded to the very end
+        if (currentBenchObjIdx >= benchmarkObjectives.length) {
+            systemLog("🏆 BENCHMARK SUITE COMPLETE!", "system");
+            isBenchmarking = false;
+            benchmarkBtn.innerText = "Run Benchmark Suite (Automated)";
+            benchmarkBtn.disabled = false;
+        }
+        return;
+    }
+
+    const obj = benchmarkObjectives[currentBenchObjIdx];
+    const mod = benchmarkModels[currentBenchModelIdx];
 
     objInput.value = obj;
     targetSelect.value = mod;
@@ -266,6 +278,11 @@ if (benchmarkBtn) {
         try {
             const res = await fetch('/api/objectives');
             const data = await res.json();
+            
+            const stateRes = await fetch('/api/benchmark_state');
+            const stateData = await stateRes.json();
+            completedBenchmarkMap = stateData.completed || {};
+            
             if (data.objectives && data.objectives.length > 0) {
                 benchmarkObjectives = data.objectives;
                 isBenchmarking = true;

@@ -837,6 +837,31 @@ def get_objectives():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/benchmark_state", methods=["GET"])
+@requires_auth
+def benchmark_state():
+    completed = {}
+    benchmark_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmark_asr")
+    
+    if os.path.exists(benchmark_dir):
+        for filename in os.listdir(benchmark_dir):
+            if filename.endswith(".json"):
+                filepath = os.path.join(benchmark_dir, filename)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        obj = data.get("objective")
+                        target = data.get("target_model")
+                        if obj and target:
+                            if obj not in completed:
+                                completed[obj] = []
+                            if target not in completed[obj]:
+                                completed[obj].append(target)
+                except Exception:
+                    pass
+                    
+    return jsonify({"completed": completed})
+
 @app.route("/api/check_attack", methods=["GET"])
 @requires_auth
 def check_attack():
