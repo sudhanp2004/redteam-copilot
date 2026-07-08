@@ -284,6 +284,7 @@
                 <div class="metadata-item">Strategy: <span id="viewStrategy">N/A</span></div>
                 <div class="metadata-item">Target Node: <span id="viewTarget">N/A</span></div>
                 <div class="metadata-item">Timestamp: <span id="viewTimestamp">N/A</span></div>
+                <div class="metadata-item">Total Turns: <span id="viewTotalTurns">N/A</span></div>
                 <div class="metadata-item">Session ID: <span id="viewSession" style="font-family: monospace;">N/A</span></div>
             </div>
             
@@ -425,6 +426,7 @@
             document.getElementById('viewStrategy').innerText = session.strategy_id || 'Custom Framework';
             document.getElementById('viewTarget').innerText = session.target_model || 'Target Host Node';
             document.getElementById('viewTimestamp').innerText = formatTimestamp(session.timestamp);
+            document.getElementById('viewTotalTurns').innerText = session.data_history ? session.data_history.length : 'N/A';
             document.getElementById('viewSession').innerText = session.session_id;
 
 

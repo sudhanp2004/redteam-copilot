@@ -18,6 +18,11 @@ keys_to_check = {
     "Key 4 (Judge)": os.environ.get("GROQ_API_KEY4"),
     "Key 5": os.environ.get("GROQ_API_KEY5"),
     "Key 6": os.environ.get("GROQ_API_KEY6"),
+    "Key 7": os.environ.get("GROQ_API_KEY7"),
+    "Key 8": os.environ.get("GROQ_API_KEY8"),
+    "Key 9": os.environ.get("GROQ_API_KEY9"),
+    "Key 10": os.environ.get("GROQ_API_KEY10"),
+    "Key 11": os.environ.get("GROQ_API_KEY11"),
 }
 
 print(f"{'Key Name':<15} | {'Status':<6} | {'Rem Tokens/Min':<14} | {'Rem Reqs/Min':<14} | {'Wait Time':<10}")

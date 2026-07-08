@@ -254,18 +254,20 @@ def _call_jbb_judge_llm(user_content):
             
             if r.status_code == 429:
                 err_msg = r.text.lower()
-                # Check if it's the daily limit
-                if "tokens per day" in err_msg or "tpd" in err_msg:
-                    print(f"[JBB Judge] TPD Limit Hit on JBB Key. Rotating...")
+                # Extract wait time first
+                wait_str = r.headers.get("retry-after", "60")
+                try:
+                    wait_time = float(wait_str.replace('s', ''))
+                except ValueError:
+                    wait_time = 60.0
+                
+                # Check if it's the daily limit OR wait is too long
+                if wait_time > 300 or "tokens per day" in err_msg or "tpd" in err_msg:
+                    print(f"[JBB Judge] Wait time {wait_time}s or TPD Limit Hit on JBB Key. Rotating...")
                     key_manager.rotate_jbb_groq_key()
                     continue
                 else:
                     # RPM or TPM wait
-                    wait_str = r.headers.get("retry-after", "5")
-                    try:
-                        wait_time = float(wait_str.replace('s', ''))
-                    except ValueError:
-                        wait_time = 5.0
                     print(f"[JBB Judge] 429 TPM/RPM. Waiting {wait_time}s...")
                     time.sleep(wait_time)
                     continue
@@ -276,7 +278,7 @@ def _call_jbb_judge_llm(user_content):
             print(f"[JBB Judge Error]: {str(e)}. Retrying...")
             time.sleep(2)
             
-    raise Exception("JBB Judge failure: Max retries exceeded (API limits). Both Key 5 and Key 6 are exhausted.")
+    raise Exception("JBB Judge failure: Max retries exceeded (API limits). All JBB Judge keys are currently exhausted or on long cooldowns.")
 
 def evaluate_jailbreak_status(victim_response, objective, target_model):
     judge_text = victim_response
