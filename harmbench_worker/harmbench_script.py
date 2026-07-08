@@ -18,6 +18,9 @@ def run_cmd(cmd):
 print("=== Installing Dependencies ===")
 run_cmd("pip install -q wandb requests")
 
+print("=== Installing System Dependencies ===")
+run_cmd("apt-get update && apt-get install -y zstd")
+
 print("\n=== Setting up Ollama ===")
 run_cmd("curl -fsSL https://ollama.com/install.sh | sh")
 print("[*] Launching Ollama core service...")
