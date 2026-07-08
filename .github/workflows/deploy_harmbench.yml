@@ -1,0 +1,39 @@
+name: Deploy HarmBench Evaluator to Kaggle
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'harmbench_worker/**'
+  workflow_dispatch: 
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Kaggle CLI
+      run: |
+        pip install --upgrade pip
+        pip install kaggle
+
+    - name: Inject WANDB Credentials
+      run: |
+        sed -i 's|os.environ.get("WANDB_API_KEY")|"${{ secrets.WANDB_API_KEY }}"|g' harmbench_worker/harmbench_script.py
+
+    - name: Push HarmBench Evaluator to Kaggle
+      env:
+        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME_HARMBENCH }}
+        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY_HARMBENCH }}
+      run: |
+        cd harmbench_worker
+        kaggle kernels push -p .
