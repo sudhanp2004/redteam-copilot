@@ -3,6 +3,9 @@ backend/attacks/*.json
 backend/attacks/*.db
 public_showcase/
 benchmark_asr/
+benchmark_asr_initial/
+benchmark_asr_v2/
+harmbench/
 # Ignore Python cache files
 __pycache__/
 *.py[cod]

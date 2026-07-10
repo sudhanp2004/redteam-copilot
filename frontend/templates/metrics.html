@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Metrics Dashboard - RedTeam Copilot</title>
+    <style>
+        :root {
+            --bg-main: #0d1117;
+            --bg-sidebar: #161b22;
+            --bg-card: #21262d;
+            --bg-card-hover: #30363d;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-red: #ff7b72;
+            --accent-yellow: #d29922;
+            --accent-green: #7ee787;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-sidebar);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 15px;
+            font-size: 0.9rem;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .nav-links a.active {
+            color: var(--accent-blue);
+            font-weight: 600;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .metric-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .card-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--accent-blue);
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .progress-container {
+            width: 100%;
+            background-color: var(--bg-main);
+            border-radius: 4px;
+            height: 8px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease-in-out;
+        }
+
+        .bg-red { background-color: var(--accent-red); }
+        .bg-yellow { background-color: var(--accent-yellow); }
+        .bg-green { background-color: var(--accent-green); }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1>Live Metrics Dashboard</h1>
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 5px;">Aggregate ASR statistics across internal and official HarmBench evaluations.</div>
+        </div>
+        <div class="nav-links">
+            <a href="/">Arena</a>
+            <a href="/library">Public Showcase</a>
+            <a href="/library/asr">Internal Benchmark</a>
+            <a href="/library/harmbench">HarmBench</a>
+            <a href="/library/metrics" class="active">Live Metrics</a>
+        </div>
+    </div>
+
+    <div class="content">
+        <div id="loading" class="loading">Fetching live metrics...</div>
+        <div id="metricsGrid" class="metrics-grid" style="display: none;"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch('/api/metrics/live');
+                if (!res.ok) throw new Error('Failed to fetch metrics');
+                const data = await res.json();
+                
+                const grid = document.getElementById('metricsGrid');
+                const loading = document.getElementById('loading');
+                
+                loading.style.display = 'none';
+                grid.style.display = 'grid';
+
+                data.forEach(stat => {
+                    const card = document.createElement('div');
+                    card.className = 'metric-card';
+                    
+                    const getColor = (pct) => {
+                        if (pct >= 80) return 'bg-red';
+                        if (pct >= 40) return 'bg-yellow';
+                        return 'bg-green';
+                    };
+
+                    card.innerHTML = `
+                        <div class="card-header">${stat.model.toUpperCase()}</div>
+                        
+                        <div class="metric-row">
+                            <div>
+                                <div class="metric-label">JBB Peak ASR (Internal)</div>
+                                <div class="progress-container"><div class="progress-bar ${getColor(stat.jbb_peak_asr)}" style="width: ${stat.jbb_peak_asr}%"></div></div>
+                            </div>
+                            <div class="metric-value">${stat.jbb_peak_asr}%</div>
+                        </div>
+
+                        <div class="metric-row">
+                            <div>
+                                <div class="metric-label">JBB Final ASR (Internal)</div>
+                                <div class="progress-container"><div class="progress-bar ${getColor(stat.jbb_final_asr)}" style="width: ${stat.jbb_final_asr}%"></div></div>
+                            </div>
+                            <div class="metric-value">${stat.jbb_final_asr}%</div>
+                        </div>
+
+                        <div class="metric-row" style="margin-top: 25px; border-top: 1px dashed var(--border-color); padding-top: 15px;">
+                            <div>
+                                <div class="metric-label" style="color: var(--text-primary); font-weight: 600;">HarmBench ASR (Official)</div>
+                                <div class="progress-container"><div class="progress-bar ${getColor(stat.hb_asr)}" style="width: ${stat.hb_asr}%"></div></div>
+                            </div>
+                            <div class="metric-value" style="color: var(--accent-red);">${stat.hb_asr}%</div>
+                        </div>
+
+                        <div class="metric-row" style="margin-top: 20px;">
+                            <div class="metric-label">Average Turns per Session</div>
+                            <div class="metric-value" style="color: var(--accent-blue);">${stat.avg_turns}</div>
+                        </div>
+                        <div class="metric-row" style="margin-bottom: 0;">
+                            <div class="metric-label">Total Sessions Evaluated</div>
+                            <div class="metric-value">${stat.total}</div>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+            } catch (err) {
+                document.getElementById('loading').textContent = 'Error loading metrics: ' + err.message;
+            }
+        });
+    </script>
+</body>
+</html>

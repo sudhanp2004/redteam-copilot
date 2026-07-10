@@ -17,13 +17,14 @@ const benchmarkBtn = document.getElementById('benchmark-btn');
 let isBenchmarking = false;
 let benchmarkObjectives = [];
 let completedBenchmarkMap = {};
-let benchmarkModels = [
+let allBenchmarkModels = [
     "deepseek:deepseek-chat",
     "mistral:mistral-large-latest",
     "anthropic:claude-haiku-4-5",
     "meta:llama-3.3-70b-versatile",
     "google:gemini-2.5-flash"
 ];
+let benchmarkModels = [];
 let currentBenchObjIdx = 0;
 let currentBenchModelIdx = 0;
 const postBtn = document.getElementById('post-btn');
@@ -284,6 +285,13 @@ if (benchmarkBtn) {
             completedBenchmarkMap = stateData.completed || {};
             
             if (data.objectives && data.objectives.length > 0) {
+                const claudeOnly = document.getElementById('claude-only-toggle').checked;
+                if (claudeOnly) {
+                    benchmarkModels = ["anthropic:claude-haiku-4-5"];
+                } else {
+                    benchmarkModels = [...allBenchmarkModels];
+                }
+
                 benchmarkObjectives = data.objectives;
                 isBenchmarking = true;
                 currentBenchObjIdx = 0;
