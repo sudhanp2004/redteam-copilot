@@ -46,7 +46,6 @@ app = Flask(__name__,
 # API KEYS & CONFIGURATION
 # ==========================================
 SUPERVISOR_PASS = os.environ.get("SUPERVISOR_PASS")
-FEATHERLESS_API_KEY = os.environ.get("FEATHERLESS_API_KEY")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN")
 TARGET_URL = f"https://{NGROK_DOMAIN}" if NGROK_DOMAIN else None
 
