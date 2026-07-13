@@ -55,7 +55,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
-PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY2")
 
 # Runtime tracking state matrices
 CURRENT_SESSION_ID = None

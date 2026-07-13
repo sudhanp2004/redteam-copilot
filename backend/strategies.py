@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import key_manager
 from prompts import PROFESSIONAL_PERSONA_ESTABLISHMENT, FAKE_EMERGENCY_SCENARIOS, ACADEMIC_RESEARCH_FRAMING, FICTIONAL_CREATIVE_FRAMING, ROUTER_PROMPT
-PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY2")
 
 # Dictionary containing strategic framing configurations
 STRATEGY_REGISTRY = {
@@ -81,7 +81,7 @@ def route_objective_to_strategy(objective, forced_strategy="auto"):
             parsed_json = json.loads(content)
             
             selected_key = parsed_json.get("selected_strategy", "ACADEMIC_RESEARCH_FRAMING")
-            reasoning = parsed_json.get("reasoning", "No description provided.")
+            reasoning = parsed_json.get("mapping_rationale", "No description provided.")
             
             print(f"[*] Strategy Router selected: {selected_key}")
             print(f"[*] Router Reasoning: {reasoning}")
