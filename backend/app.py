@@ -115,6 +115,32 @@ HARMBENCH_REFUSAL_STRINGS = [
 
 # Hardcoded payload dictionaries removed in favor of dynamic spaCy lexical density
 
+def get_system_telemetry():
+    telemetry = {}
+    try:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        files_to_hash = ['app.py', 'embedder_service.py', 'strategies.py', 'drift_library.json']
+        for file_name in files_to_hash:
+            filepath = os.path.join(app_dir, file_name)
+            if os.path.exists(filepath):
+                with open(filepath, 'rb') as f:
+                    file_hash = hashlib.sha256(f.read()).hexdigest()
+                telemetry[f'{file_name}_sha256'] = file_hash
+            else:
+                telemetry[f'{file_name}_sha256'] = "file_not_found"
+    except Exception as e:
+        telemetry['hash_error'] = f"error: {str(e)}"
+        
+    try:
+        commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=os.path.dirname(app_dir), stderr=subprocess.STDOUT).decode('utf-8').strip()
+        telemetry['git_commit'] = commit_hash
+    except Exception as e:
+        telemetry['git_commit'] = "error_fetching_git"
+        
+    return json.dumps(telemetry)
+
+SYSTEM_TELEMETRY_JSON = get_system_telemetry()
+
 def calculate_metrics(attacker_text, victim_text, previous_tv=0.0):
     if not victim_text.strip():
         return {"tv": 0.0, "emb": 0.0, "hedge": 0.0, "info": 0.0, "read": 0.0}
@@ -206,7 +232,8 @@ def _call_judge_llm(system_prompt, user_content, target_model):
         headers = {
             "Content-Type": "application/json",
             "x-portkey-api-key": PORTKEY_API_KEY,
-            "x-portkey-virtual-key": key_manager.get_groq_key()
+            "x-portkey-virtual-key": key_manager.get_groq_key(),
+            "x-portkey-metadata": SYSTEM_TELEMETRY_JSON
         }
         try:
             r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
@@ -262,7 +289,8 @@ def _call_jbb_judge_llm(user_content):
         headers = {
             "Content-Type": "application/json",
             "x-portkey-api-key": PORTKEY_API_KEY,
-            "x-portkey-virtual-key": key_manager.get_jbb_groq_key()
+            "x-portkey-virtual-key": key_manager.get_jbb_groq_key(),
+            "x-portkey-metadata": SYSTEM_TELEMETRY_JSON
         }
         try:
             r = requests.post("https://api.portkey.ai/v1/chat/completions", json=payload, headers=headers, timeout=90)
@@ -738,7 +766,8 @@ def attack_stream():
             headers = {
                 "Content-Type": "application/json",
                 "x-portkey-api-key": PORTKEY_API_KEY,
-                "x-portkey-virtual-key": key_manager.get_groq_key()
+                "x-portkey-virtual-key": key_manager.get_groq_key(),
+                "x-portkey-metadata": SYSTEM_TELEMETRY_JSON
             }
             attacker_payload = {
                 "model": ATTACKER_MODEL,
@@ -902,7 +931,8 @@ def attack_stream():
             headers = {
                 "Content-Type": "application/json",
                 "x-portkey-api-key": PORTKEY_API_KEY,
-                "x-portkey-virtual-key": current_api['key']
+                "x-portkey-virtual-key": current_api['key'],
+                "x-portkey-metadata": SYSTEM_TELEMETRY_JSON
             }
             
             payload = {"model": model_name, "messages": messages, "stream": True}
