@@ -285,13 +285,7 @@ if (benchmarkBtn) {
             completedBenchmarkMap = stateData.completed || {};
             
             if (data.objectives && data.objectives.length > 0) {
-                const claudeOnly = document.getElementById('claude-only-toggle').checked;
-                if (claudeOnly) {
-                    benchmarkModels = ["anthropic:claude-haiku-4-5"];
-                } else {
-                    benchmarkModels = [...allBenchmarkModels];
-                }
-
+                benchmarkModels = [...allBenchmarkModels];
                 benchmarkObjectives = data.objectives;
                 isBenchmarking = true;
                 currentBenchObjIdx = 0;
