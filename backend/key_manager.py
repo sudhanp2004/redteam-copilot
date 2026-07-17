@@ -14,6 +14,8 @@ GROQ_KEYS = [
 GROQ_KEYS = [k for k in GROQ_KEYS if k]
 
 JBB_GROQ_KEYS = [
+    os.environ.get("GROQ_API_KEY13"),
+    os.environ.get("GROQ_API_KEY12"),
     os.environ.get("GROQ_API_KEY4"),
     os.environ.get("GROQ_API_KEY3"),
     os.environ.get("GROQ_API_KEY2"),
@@ -53,5 +55,5 @@ def rotate_jbb_groq_key():
         current_jbb_key_idx = (current_jbb_key_idx + 1) % len(JBB_GROQ_KEYS)
         print(f"[KeyManager] Rotated JBB Groq API Key to index {current_jbb_key_idx}")
         if current_jbb_key_idx == 0:
-            print(f"[KeyManager] ⚠️ WARNING: ALL JBB JUDGE GROQ KEYS (4→1) ARE EXHAUSTED. Cycling back to Key 4.")
+            print(f"[KeyManager] ⚠️ WARNING: ALL JBB JUDGE GROQ KEYS EXHAUSTED. Cycling back to Key 13.")
 
