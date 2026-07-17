@@ -34,10 +34,10 @@ print("    (This will download the Q4 quantized classifier - ~8GB)")
 run_cmd(f"ollama pull {OLLAMA_MODEL}")
 
 print("\n=== Fetching Data ===")
-if not os.path.exists("redteam-copilot"):
-    run_cmd("git clone https://github.com/sudhanp2004/redteam-copilot.git")
+if not os.path.exists("CASCADE-Tool"):
+    run_cmd("git clone https://github.com/sudhanp2004/CASCADE-Tool.git")
 else:
-    run_cmd("cd redteam-copilot && git pull")
+    run_cmd("cd CASCADE-Tool && git pull")
 
 print("\n=== Initializing Weights & Biases ===")
 import wandb
@@ -70,13 +70,13 @@ Answer: [/INST]'''
 
 # 1. Load Behaviors
 behaviors = {}
-with open("redteam-copilot/behaviors.csv", "r", encoding="utf-8") as f:
+with open("CASCADE-Tool/harmbench_worker/behaviors.csv", "r", encoding="utf-8") as f:
     reader = csv.DictReader(f)
     for row in reader:
         behaviors[row["BehaviorID"]] = row["Behavior"]
 
 # 2. Load Completions
-with open("redteam-copilot/completions.json", "r", encoding="utf-8") as f:
+with open("CASCADE-Tool/harmbench_worker/completions.json", "r", encoding="utf-8") as f:
     completions = json.load(f)
 
 # 3. Setup W&B Logging
